@@ -7,13 +7,13 @@ class Destination
 {
 friend class Source;
 private:
-	virtual void receive(cvec const & data, Source & source) = 0;
-}
+	virtual void receive(itpp::cvec const & data, class Source & source) { throw std::invalid_argument("unimplemented"); }
+};
 
 class Source
 {
 public:
-	static void subscribe(Destination destination);
+	static void subscribe(Destination & destination);
 
 	virtual double tuneHertz(double) { throw std::invalid_argument("unimplemented"); }
 	virtual double hertz() { throw std::invalid_argument("unimplemented"); }
@@ -24,12 +24,7 @@ public:
 	virtual std::pair<double,double> dBRange() { throw std::invalid_argument("unimplemented"); }
 
 protected:
-	void dispatch(cvec const & data);
+	void dispatch(itpp::cvec const & data);
 
-	// TODO static list of receivers
-}
-
-void Source::dispatch(cvec const & data)
-{
-	// TODO dispatch to receiver list
-}
+	static std::vector<Destination *> receivers;
+};
