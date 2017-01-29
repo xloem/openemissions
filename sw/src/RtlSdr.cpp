@@ -1,8 +1,6 @@
 #include "RtlSdr.hpp"
 
-extern "C" {
 #include <rtl-sdr.h>
-}
 #include <system_error>
 
 std::vector<RtlSdr> RtlSdr::createForAllDevices()
@@ -79,8 +77,8 @@ void RtlSdr::readAsyncCb(unsigned char *buf, unsigned len, void * ctx)
 	RtlSdr & rtlSdr = *reinterpret_cast<RtlSdr *>(ctx);
 	rtlSdr.data.set_size(len / 2);
 	for (size_t i = 0; i < len / 2; ++ i) {
-		rtlSdr.data[i].real( (buf[i*2] - 127.5d) / 127.5d );
-		rtlSdr.data[i].imag( (buf[i*2+1] - 127.5d) / 127.5d );
+		rtlSdr.data[i].real( (buf[i*2] - 127.5) / 127.5 );
+		rtlSdr.data[i].imag( (buf[i*2+1] - 127.5) / 127.5 );
 	}
 	rtlSdr.dispatch(rtlSdr.data);
 }
@@ -114,12 +112,12 @@ std::pair<double,double> RtlSdr::hertzRange()
 double RtlSdr::setDB(double dB)
 {
 	int closest = gains[0];
-	double dist = 1.0/0.0d;
+	double dist = 1.0/0.0;
 	for (int & i : gains) {
-		double gain = i / 10.0d;
-		if (abs(gain - dB) < dist) {
+		double gain = i / 10.0;
+		if (std::abs(gain - dB) < dist) {
 			closest = i;
-			dist = abs(gain - dB);
+			dist = std::abs(gain - dB);
 		}
 	}
 	rtlErrNonzero(rtlsdr_set_tuner_gain(dev, closest));
@@ -128,19 +126,20 @@ double RtlSdr::setDB(double dB)
 
 double RtlSdr::dB()
 {
-	return rtlErrZero(rtlsdr_get_tuner_gain(dev)) / 10.0d;
+	return rtlErrZero(rtlsdr_get_tuner_gain(dev)) / 10.0;
 }
 
 std::pair<double,double> RtlSdr::dBRange()
 {
-	std::pair<double,double> range = std::make_pair<double,double>(1.0/0.0d, -1.0/0.0d);
+	std::pair<double,double> range = std::make_pair<double,double>(1.0/0.0, -1.0/0.0);
 	for (int & i : gains) {
-		double gain = i / 10.0d;
+		double gain = i / 10.0;
 		if (gain < range.first)
 			range.first = gain;
 		if (gain > range.second)
 			range.second = gain;
 	}
+	return range;
 }
 
 double RtlSdr::setSampleHertz(double rate)
