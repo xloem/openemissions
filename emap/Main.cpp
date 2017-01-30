@@ -8,7 +8,8 @@ public:
 	Main() {
 		SDLWindow window;
 
-		window.draw({0,1,0});
+		window.draw(itpp::mat("0 0.5; 0.25 1"));
+		window.draw(itpp::vec("0 1 0"));
 
 		radios = RtlSdr::createForAllDevices();
 		std::cout << radios.size() << " radio(s) created." << std::endl;

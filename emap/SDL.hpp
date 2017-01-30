@@ -1,7 +1,8 @@
 #pragma once
 
-#include <vector>
 #include <unordered_map>
+#include <itpp/base/mat.h>
+#include <itpp/base/vec.h>
 
 class SDLWindow
 {
@@ -10,11 +11,13 @@ public:
 	SDLWindow(int width = 0, int height = 0);
 	~SDLWindow();
 
-	void draw(std::vector<double> const &);
+	void draw(itpp::vec const &);
+	void draw(itpp::mat const &);
 	std::pair<unsigned, unsigned> size();
 
 private:
-	std::vector<double> vectorData;
+	itpp::vec vectorData;
+	struct SDL_Texture * textureData;
 	void draw();
 
 	struct SDL_Window * window;
