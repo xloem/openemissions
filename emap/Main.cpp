@@ -1,7 +1,7 @@
 #include "Main.hpp"
 
 #include "RtlSdr.hpp"
-#include "SDL.hpp"
+#include "GUI.hpp"
 
 #include <iostream>
 #include <stdexcept>
@@ -16,10 +16,10 @@ Main::Main()
 
 	auto stoppedFuture = stopped.get_future();
 
-	SDLWindow window;
+	auto window = GUIWindow::create();
 
-	window.draw(itpp::mat("0 0.5; 0.25 1"));
-	window.draw(itpp::vec("0 1 0"));
+	window->draw(itpp::mat("0 0.5; 0.25 1"));
+	window->draw(itpp::vec("0 1 0"));
 
 	std::vector<RtlSdr> radios;
 	radios = RtlSdr::createForAllDevices();

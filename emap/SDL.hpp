@@ -1,11 +1,13 @@
 #pragma once
 
+#include "GUI.hpp"
+
 #include <mutex>
 #include <unordered_map>
 #include <itpp/base/mat.h>
 #include <itpp/base/vec.h>
 
-class SDLWindow
+class SDLWindow : public GUIWindow
 {
 friend class SDL;
 public:
