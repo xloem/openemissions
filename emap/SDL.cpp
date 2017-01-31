@@ -120,14 +120,14 @@ void SDLWindow::performDestroy()
 		std::lock_guard<std::mutex> windowsLk(windowsMtx);
 		windows.erase(SDL_GetWindowID(window));
 	}
-	SDL_DestroyRenderer(renderer);
-	renderer = 0;
-	SDL_DestroyWindow(window);
-	window = 0;
 	if (textureData) {
 		SDL_DestroyTexture(textureData);
 		textureData = 0;
 	}
+	SDL_DestroyRenderer(renderer);
+	renderer = 0;
+	SDL_DestroyWindow(window);
+	window = 0;
 }
 
 std::pair<unsigned, unsigned> SDLWindow::size()
