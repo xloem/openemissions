@@ -1,14 +1,15 @@
 #pragma once
 
+#include <mutex>
 #include <unordered_map>
 #include <itpp/base/mat.h>
 #include <itpp/base/vec.h>
 
 class SDLWindow
 {
-friend class SDLEvents;
+friend class SDL;
 public:
-	SDLWindow(int width = 0, int height = 0);
+	SDLWindow(unsigned width = 0, unsigned height = 0);
 	~SDLWindow();
 
 	void draw(itpp::vec const &);
@@ -16,19 +17,19 @@ public:
 	std::pair<unsigned, unsigned> size();
 
 private:
+	std::mutex dataMtx;
 	itpp::vec vectorData;
 	struct SDL_Texture * textureData;
-	void draw();
+
+	void performCreate(int width, int height);
+	void performSize(int & width, int & height);
+	void performLock(int width, int height, void * * pixels, int * pitch);
+	void performUnlock();
+	void performDraw();
+	void performDestroy();
 
 	struct SDL_Window * window;
 	struct SDL_Renderer * renderer;
 
-	static std::unordered_map<uint32_t, SDLWindow *> windows;
-	void receiveSDLEvent(struct SDL_WindowEvent & event);
-};
-
-class SDLEvents
-{
-public:
-	static void loop();
+	void receiveSDLEvent(union SDL_Event & event);
 };
