@@ -21,9 +21,12 @@ Main::Main()
 	window->draw(itpp::mat("0 0.5; 0.25 1"));
 	window->draw(itpp::vec("0 1 0"));
 
-	std::vector<RtlSdr> radios;
-	radios = RtlSdr::createForAllDevices();
-	std::cout << radios.size() << " radio(s) created." << std::endl;
+	std::vector<std::unique_ptr<Source>> sources;
+	for (SourceType const * source : Source::sources())
+	{
+		sources.emplace_back(source->construct());
+	}
+	std::cout << sources.size() << " source(s) created." << std::endl;
 
 	stoppedFuture.wait();
 }

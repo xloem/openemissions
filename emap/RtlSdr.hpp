@@ -7,10 +7,8 @@
 
 class RtlSdr : public Source
 {
+friend class RtlSdrType;
 public:
-	static std::vector<RtlSdr> createForAllDevices();
-	
-	RtlSdr(uint32_t index);
 	~RtlSdr();
 
 	double tuneHertz(double);
@@ -26,6 +24,8 @@ public:
 	std::pair<double,double> sampleHertzRange();
 
 private:
+	RtlSdr(uint32_t index);
+
 	struct rtlsdr_dev *dev;
 	std::vector<int> gains;
 

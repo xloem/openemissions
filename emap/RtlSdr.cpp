@@ -3,16 +3,41 @@
 #include <rtl-sdr.h>
 #include <system_error>
 
-std::vector<RtlSdr> RtlSdr::createForAllDevices()
+class RtlSdrType : public SourceType
 {
-	uint32_t count = rtlsdr_get_device_count();
-	std::vector<RtlSdr> ret;
-	for (uint32_t index = 0; index < count; ++ index)
+public:
+	RtlSdrType(std::string name, uint32_t index)
+	: SourceType(name), index(index)
+	{ }
+	std::unique_ptr<Source> construct() const
 	{
-		ret.emplace_back(index);
+		return std::unique_ptr<Source>(new RtlSdr(index));
 	}
-	return ret;
-}
+
+private:
+	uint32_t index;
+};
+
+static class RtlSdrEnumerator
+{
+public:
+	RtlSdrEnumerator()
+	{
+		uint32_t numDevices = rtlsdr_get_device_count();
+		std::string name;
+		char serial[256];
+		for (uint32_t dev = 0; dev < numDevices; ++ dev) {
+			name = rtlsdr_get_device_name(dev);
+			rtlsdr_get_device_usb_strings(dev, 0, 0, serial);
+			types.emplace_back(name + " " + serial, dev);
+		}
+		for (auto & type : types) {
+			Source::_register(&type);
+		}
+	}
+private:
+	std::vector<RtlSdrType> types;
+} rtlSdrEnumerator;
 
 static void rtlErrAny(int r)
 {
@@ -80,7 +105,7 @@ void RtlSdr::readAsyncCb(unsigned char *buf, unsigned len, void * ctx)
 		rtlSdr.data[i].real( (buf[i*2] - 127.5) / 127.5 );
 		rtlSdr.data[i].imag( (buf[i*2+1] - 127.5) / 127.5 );
 	}
-	rtlSdr.dispatch(rtlSdr.data);
+	rtlSdr.dispatch(rtlSdr.data, rtlSdr.data.size() / rtlSdr.sampleHertz());
 }
 
 double RtlSdr::tuneHertz(double freq)
