@@ -14,13 +14,13 @@ public:
 	SDLWindow(unsigned width = 0, unsigned height = 0);
 	~SDLWindow();
 
-	void draw(itpp::vec const &);
+	void draw(std::vector<itpp::vec> const &);
 	void draw(itpp::mat const &);
 	std::pair<unsigned, unsigned> size();
 
 private:
 	std::mutex dataMtx;
-	itpp::vec vectorData;
+	std::vector<itpp::vec> vectorData;
 	struct SDL_Texture * textureData;
 
 	void performCreate(int width, int height);

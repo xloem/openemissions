@@ -141,7 +141,7 @@ void SDLWindow::performSize(int & w, int & h)
 	sdlErr( SDL_GetRendererOutputSize(renderer, &w, &h) );
 }
 
-void SDLWindow::draw(itpp::vec const & values)
+void SDLWindow::draw(std::vector<itpp::vec> const & values)
 {
 	{
 		std::lock_guard<std::mutex> dataLk(dataMtx);
@@ -204,18 +204,20 @@ void SDLWindow::performDraw()
 		sdlErr( SDL_RenderClear(renderer) );
 	}
 	if (vectorData.size()) {
-		static std::vector<SDL_Point> points;
-		int w, h;
-		sdlErr( SDL_GetRendererOutputSize(renderer, &w, &h) );
-	
-		points.resize(vectorData.size());
-		for (size_t i = 0; i < points.size(); ++ i) {
-			points[i].x = w * i / (points.size() - 1);
-			points[i].y = h * vectorData[i];
+		for (auto & data : vectorData) {
+			static std::vector<SDL_Point> points;
+			int w, h;
+			sdlErr( SDL_GetRendererOutputSize(renderer, &w, &h) );
+		
+			points.resize(data.size());
+			for (size_t i = 0; i < points.size(); ++ i) {
+				points[i].x = w * i / (points.size() - 1);
+				points[i].y = h * (data[i] + 1) / 2;
+			}
+		
+			sdlErr( SDL_SetRenderDrawColor(renderer, 255, 0, 255, SDL_ALPHA_OPAQUE) );
+			sdlErr( SDL_RenderDrawLines(renderer, &points[0], points.size()) );
 		}
-	
-		sdlErr( SDL_SetRenderDrawColor(renderer, 255, 0, 255, SDL_ALPHA_OPAQUE) );
-		sdlErr( SDL_RenderDrawLines(renderer, &points[0], points.size()) );
 	}
 	SDL_RenderPresent(renderer);
 }

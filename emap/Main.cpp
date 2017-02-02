@@ -1,7 +1,9 @@
 #include "Main.hpp"
 
-#include "RtlSdr.hpp"
-#include "GUI.hpp"
+#include "Source.hpp"
+#include "Oscilloscope.hpp"
+
+//#include "FLAC_XMP.hpp"
 
 #include <iostream>
 #include <stdexcept>
@@ -16,17 +18,16 @@ Main::Main()
 
 	auto stoppedFuture = stopped.get_future();
 
-	auto window = GUIWindow::create();
-
-	window->draw(itpp::mat("0 0.5; 0.25 1"));
-	window->draw(itpp::vec("0 1 0"));
-
 	std::vector<std::unique_ptr<Source>> sources;
 	for (SourceType const * source : Source::sources())
 	{
 		sources.emplace_back(source->construct());
 	}
 	std::cout << sources.size() << " source(s) created." << std::endl;
+
+	//FLAC_XMP flacXmp("test.flac", "test.xmp");
+
+	Oscilloscope scope0(*sources[0].get());
 
 	stoppedFuture.wait();
 }

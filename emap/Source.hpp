@@ -8,8 +8,11 @@
 class Destination
 {
 friend class Source;
+protected:
+	void ready();
+	virtual ~Destination();
 private:
-	virtual void receive(itpp::cvec const & data, double secondsDuration, class Source & source) { throw std::invalid_argument("unimplemented"); }
+	virtual void receive(itpp::cvec const & data, double secondsDuration, double tunedHertz, double dB, double unixSecondsCompleted, class Source & source) { throw std::invalid_argument("unimplemented"); }
 };
 
 class SourceType
@@ -27,7 +30,7 @@ class Source
 public:
 	static std::vector<SourceType const *> sources();
 
-	static void subscribe(Destination & destination);
+	virtual ~Source();
 
 	virtual double tuneHertz(double) { throw std::invalid_argument("unimplemented"); }
 	virtual double hertz() { throw std::invalid_argument("unimplemented"); }
@@ -41,5 +44,5 @@ public:
 	static void _deregister(std::string name);
 
 protected:
-	void dispatch(itpp::cvec const & data, double secondsDuration);
+	void dispatch(itpp::cvec const & data, double secondsDuration, double tunedHertz, double gainDB, double unixSecondsCompleted);
 };

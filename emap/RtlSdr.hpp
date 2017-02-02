@@ -2,7 +2,10 @@
 
 #include "Source.hpp"
 
+#include <mutex>
+#include <thread>
 #include <vector>
+
 #include <itpp/base/vec.h>
 
 class RtlSdr : public Source
@@ -26,10 +29,11 @@ public:
 private:
 	RtlSdr(uint32_t index);
 
+	bool running;
+	std::mutex mtx;
 	struct rtlsdr_dev *dev;
 	std::vector<int> gains;
 
-	itpp::cvec data;
-
-	static void readAsyncCb(unsigned char * buf, unsigned len, void * ctx);
+	std::thread th;
+	void run();
 };

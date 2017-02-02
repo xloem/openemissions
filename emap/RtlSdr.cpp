@@ -29,7 +29,7 @@ public:
 		for (uint32_t dev = 0; dev < numDevices; ++ dev) {
 			name = rtlsdr_get_device_name(dev);
 			rtlsdr_get_device_usb_strings(dev, 0, 0, serial);
-			types.emplace_back(name + " " + serial, dev);
+			types.emplace_back(name + " " + serial + "(" + std::to_string(dev) + ")", dev);
 		}
 		for (auto & type : types) {
 			Source::_register(&type);
@@ -65,14 +65,8 @@ static int rtlErrNonpositive(int r)
 	return r;
 }
 
-static int rtlErrNegative(int r)
-{
-	if (r < 0)
-		rtlErrAny(r);
-	return r;
-}
-
 RtlSdr::RtlSdr(uint32_t index)
+: running(true)
 {
 	rtlErrNonzero( rtlsdr_open(&dev, index) );
 
@@ -86,38 +80,58 @@ RtlSdr::RtlSdr(uint32_t index)
 	gains.resize( rtlErrNonpositive( rtlsdr_get_tuner_gains(dev, 0) ) );
 	rtlErrNonpositive( rtlsdr_get_tuner_gains(dev, &gains[0]) );
 
+	// Default tuning
+	auto hzRange = hertzRange();
+	tuneHertz((hzRange.first + hzRange.second) / 2);
+
+	// Default gain
+	setDB(dBRange().second);
+
+	// Seems to need this
+	rtlsdr_reset_buffer(dev);
+
 	// start
-	rtlErrNonzero( rtlsdr_read_async(dev, readAsyncCb, this, 0, 0) );
+	th = std::thread(&RtlSdr::run, this);
 }
 
 RtlSdr::~RtlSdr()
 {
-	rtlErrNonzero( rtlsdr_cancel_async(dev) );
+	{
+		std::lock_guard<std::mutex> devLock(mtx);
+		running = false;
+	}
+	th.join();
+	
 	rtlErrNonzero( rtlsdr_close(dev) );
 	dev = 0;
 }
 
-void RtlSdr::readAsyncCb(unsigned char *buf, unsigned len, void * ctx)
+void RtlSdr::run()
 {
-	RtlSdr & rtlSdr = *reinterpret_cast<RtlSdr *>(ctx);
-	rtlSdr.data.set_size(len / 2);
-	for (size_t i = 0; i < len / 2; ++ i) {
-		rtlSdr.data[i].real( (buf[i*2] - 127.5) / 127.5 );
-		rtlSdr.data[i].imag( (buf[i*2+1] - 127.5) / 127.5 );
+	int n_read;
+	std::vector<uint8_t> buf(16 * 32 * 512);
+	itpp::cvec data;
+
+	for (;;) {
+		{
+			std::lock_guard<std::mutex> devLock(mtx);
+			if (!running) break;
+			rtlErrNonzero( rtlsdr_read_sync(dev, &buf[0], buf.size(), &n_read) );
+		}
+
+		data.set_size(n_read / 2);
+		for (int i = 0; i < data.size(); ++ i) {
+			data[i].real( (buf[i*2] - 127.5) / 127.5 );
+			data[i].imag( (buf[i*2+1] - 127.5) / 127.5 );
+		}
+		dispatch(data, data.size() / sampleHertz(), hertz(), dB(), 0);
 	}
-	rtlSdr.dispatch(rtlSdr.data, rtlSdr.data.size() / rtlSdr.sampleHertz());
 }
 
 double RtlSdr::tuneHertz(double freq)
 {
-	int directSampling = rtlErrNegative( rtlsdr_get_direct_sampling(dev) );
-	if (freq > 28800000) {
-		if (directSampling)
-			rtlErrNonzero( rtlsdr_set_direct_sampling(dev, 0) );
-		rtlErrNonzero( rtlsdr_set_center_freq(dev, freq) );
-	} else {
-		if (!directSampling)
-			rtlErrNonzero( rtlsdr_set_direct_sampling(dev, 1) );
+	{
+		std::lock_guard<std::mutex> devLock(mtx);
 		rtlErrNonzero( rtlsdr_set_center_freq(dev, freq) );
 	}
 	return hertz();
@@ -125,13 +139,13 @@ double RtlSdr::tuneHertz(double freq)
 
 double RtlSdr::hertz()
 {
-	return rtlErrZero(rtlsdr_get_center_freq(dev));
+	std::lock_guard<std::mutex> devLock(mtx);
+	return rtlsdr_get_center_freq(dev);
 }
 
 std::pair<double,double> RtlSdr::hertzRange()
 {
-	//return std::make_pair<double,double>(24000000, 1850000000);
-	return std::make_pair<double,double>(0, 1850000000);
+	return std::make_pair<double,double>(24000000, 1850000000);
 }
 
 double RtlSdr::setDB(double dB)
@@ -145,12 +159,16 @@ double RtlSdr::setDB(double dB)
 			dist = std::abs(gain - dB);
 		}
 	}
-	rtlErrNonzero(rtlsdr_set_tuner_gain(dev, closest));
+	{
+		std::lock_guard<std::mutex> devLock(mtx);
+		rtlErrNonzero(rtlsdr_set_tuner_gain(dev, closest));
+	}
 	return this->dB();
 }
 
 double RtlSdr::dB()
 {
+	std::lock_guard<std::mutex> devLock(mtx);
 	return rtlErrZero(rtlsdr_get_tuner_gain(dev)) / 10.0;
 }
 
@@ -169,12 +187,16 @@ std::pair<double,double> RtlSdr::dBRange()
 
 double RtlSdr::setSampleHertz(double rate)
 {
-	rtlErrNonzero( rtlsdr_set_sample_rate(dev, rate) );
+	{
+		std::lock_guard<std::mutex> devLock(mtx);
+		rtlErrNonzero( rtlsdr_set_sample_rate(dev, rate) );
+	}
 	return sampleHertz();
 }
 
 double RtlSdr::sampleHertz()
 {
+	std::lock_guard<std::mutex> devLock(mtx);
 	return rtlErrZero( rtlsdr_get_sample_rate(dev) );
 }
 
