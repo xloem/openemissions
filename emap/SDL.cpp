@@ -9,6 +9,9 @@
 
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
+#include <SDL_ttf.h>
+
+static TTF_Font * font;
 
 static int sdlErr(int r)
 {
@@ -50,7 +53,8 @@ struct SDL_CustomWindowEvent : public SDL_CommonEvent
 		DESTROY,
 		GET_SIZE,
 		TEXTURE,
-		SCROLL
+		SCROLL,
+		TEXT
 	} subtype;
 	SDLWindow * window;
 	std::promise<void> * promise;
@@ -89,7 +93,7 @@ uint32_t SDL_CustomWindowEvent::TYPE = -1;
 
 
 SDLWindow::SDLWindow(int width, int height)
-: textureData(0)
+: textureData(0, SDL_DestroyTexture), textData(0, SDL_DestroyTexture), window(0, SDL_DestroyWindow), renderer(0, SDL_DestroyRenderer)
 {
 	auto dims = std::make_pair(width, height);
 	SDL_CustomWindowEvent(SDL_CustomWindowEvent::CREATE, this, &dims);
@@ -109,7 +113,11 @@ void SDLWindow::performCreate(std::pair<int,int> const * dims)
 	}
 	{
 		std::lock_guard<std::mutex> windowsLk(windowsMtx);
+		SDL_Window * window;
+		SDL_Renderer * renderer;
 		sdlErr( SDL_CreateWindowAndRenderer(width, height, flags, &window, &renderer) );
+		this->window.reset(window);
+		this->renderer.reset(renderer);
 		windows[SDL_GetWindowID(window)] = this;
 	}
 }
@@ -123,16 +131,12 @@ void SDLWindow::performDestroy()
 {
 	{
 		std::lock_guard<std::mutex> windowsLk(windowsMtx);
-		windows.erase(SDL_GetWindowID(window));
+		windows.erase(SDL_GetWindowID(window.get()));
 	}
-	if (textureData) {
-		SDL_DestroyTexture(textureData);
-		textureData = 0;
-	}
-	SDL_DestroyRenderer(renderer);
-	renderer = 0;
-	SDL_DestroyWindow(window);
-	window = 0;
+	textData.release();
+	textureData.release();
+	renderer.release();
+	window.release();
 }
 
 std::pair<int, int> SDLWindow::size()
@@ -144,7 +148,7 @@ std::pair<int, int> SDLWindow::size()
 
 void SDLWindow::performSize(std::pair<int, int> * dims)
 {
-	sdlErr( SDL_GetRendererOutputSize(renderer, &dims->first, &dims->second) );
+	sdlErr( SDL_GetRendererOutputSize(renderer.get(), &dims->first, &dims->second) );
 }
 
 void SDLWindow::setLines(std::vector<itpp::vec> const & values)
@@ -155,7 +159,7 @@ void SDLWindow::setLines(std::vector<itpp::vec> const & values)
 	}
 	SDL_Event event;
 	event.window.type = SDL_WINDOWEVENT;
-	event.window.windowID = SDL_GetWindowID(window);
+	event.window.windowID = SDL_GetWindowID(window.get());
 	event.window.event = SDL_WINDOWEVENT_EXPOSED;
 	sdlErr( SDL_PushEvent(&event) );
 }
@@ -170,20 +174,25 @@ void SDLWindow::addRow(itpp::vec const & values)
 	SDL_CustomWindowEvent event(SDL_CustomWindowEvent::SCROLL, this, &values);
 }
 
+void SDLWindow::setText(std::string const & value)
+{
+	SDL_CustomWindowEvent event(SDL_CustomWindowEvent::TEXT, this, &value);
+}
+
 void SDLWindow::performScroll(itpp::vec const * values)
 {
 	std::pair<int, int> dims;
 	if (!textureData) {
 		performSize(&dims);
-		textureData = sdlErr( SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING, dims.first, dims.second) );
+		textureData.reset( sdlErr( SDL_CreateTexture(renderer.get(), SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING, dims.first, dims.second) )  );
 	} else {
-		sdlErr( SDL_QueryTexture(textureData, 0, 0, &dims.first, &dims.second) );
+		sdlErr( SDL_QueryTexture(textureData.get(), 0, 0, &dims.first, &dims.second) );
 	}
 
 	uint8_t * pixels;
 	int pitch;
 
-	sdlErr( SDL_LockTexture(textureData, 0, reinterpret_cast<void**>(&pixels), &pitch) );
+	sdlErr( SDL_LockTexture(textureData.get(), 0, reinterpret_cast<void**>(&pixels), &pitch) );
 	unsigned offset = pitch * (dims.second - 1);
 	memcpy(pixels, pixels + pitch, offset);
 	uint8_t * pixel = pixels + offset;
@@ -195,7 +204,7 @@ void SDLWindow::performScroll(itpp::vec const * values)
 		*(pixel ++) = c;
 	}
 
-	SDL_UnlockTexture(textureData);
+	SDL_UnlockTexture(textureData.get());
 	performDraw();
 }
 
@@ -203,20 +212,19 @@ void SDLWindow::performTexture(itpp::mat const * values)
 {
 	int w = 0, h = 0;
 	if (textureData)
-		sdlErr( SDL_QueryTexture(textureData, 0, 0, &w, &h) );
+		sdlErr( SDL_QueryTexture(textureData.get(), 0, 0, &w, &h) );
 	int height = values->rows();
 	if (w != values->cols() || h != height) {
 		w = values->cols();
 		h = height;
-		SDL_DestroyTexture(textureData);
-		textureData = 0;
-		textureData = sdlErr( SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING, w, h) );
+		textureData.release();
+		textureData.reset(sdlErr( SDL_CreateTexture(renderer.get(), SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING, w, h) ));
 	}
 
 	uint8_t * pixels;
 	int pitch;
 
-	sdlErr( SDL_LockTexture(textureData, 0, reinterpret_cast<void**>(&pixels), &pitch) );
+	sdlErr( SDL_LockTexture(textureData.get(), 0, reinterpret_cast<void**>(&pixels), &pitch) );
 
 	for (int y = 0, i = 0; y < values->rows(); ++ y, pixels += pitch) {
 		uint8_t * pixel = pixels;
@@ -228,7 +236,19 @@ void SDLWindow::performTexture(itpp::mat const * values)
 		}
 	}
 
-	SDL_UnlockTexture(textureData);
+	SDL_UnlockTexture(textureData.get());
+	performDraw();
+}
+
+void SDLWindow::performText(std::string const * string)
+{
+	static SDL_Color fg = SDL_Color{255,0,255,0};
+	static SDL_Color bg = SDL_Color{0,0,0,0};
+
+	std::unique_ptr<SDL_Surface,void (*)(SDL_Surface*)> surface(TTF_RenderUTF8_Shaded(font, string->c_str(), fg, bg), SDL_FreeSurface);
+
+	textData.reset(sdlErr( SDL_CreateTextureFromSurface(renderer.get(), surface.get()) ));
+
 	performDraw();
 }
 
@@ -236,16 +256,16 @@ void SDLWindow::performDraw()
 {
 	std::lock_guard<std::mutex> dataLk(dataMtx);
 	if (textureData) {
-		sdlErr( SDL_RenderCopy(renderer, textureData, 0, 0) );
+		sdlErr( SDL_RenderCopy(renderer.get(), textureData.get(), 0, 0) );
 	} else {
-		sdlErr( SDL_SetRenderDrawColor(renderer, 0, 0, 0, SDL_ALPHA_OPAQUE) );
-		sdlErr( SDL_RenderClear(renderer) );
+		sdlErr( SDL_SetRenderDrawColor(renderer.get(), 0, 0, 0, SDL_ALPHA_OPAQUE) );
+		sdlErr( SDL_RenderClear(renderer.get()) );
 	}
 	if (vectorData.size()) {
 		for (auto & data : vectorData) {
 			static std::vector<SDL_Point> points;
 			int w, h;
-			sdlErr( SDL_GetRendererOutputSize(renderer, &w, &h) );
+			sdlErr( SDL_GetRendererOutputSize(renderer.get(), &w, &h) );
 		
 			points.resize(data.size());
 			for (size_t i = 0; i < points.size(); ++ i) {
@@ -253,11 +273,17 @@ void SDLWindow::performDraw()
 				points[i].y = h * (data[i] + 1) / 2;
 			}
 		
-			sdlErr( SDL_SetRenderDrawColor(renderer, 255, 0, 255, SDL_ALPHA_OPAQUE) );
-			sdlErr( SDL_RenderDrawLines(renderer, &points[0], points.size()) );
+			sdlErr( SDL_SetRenderDrawColor(renderer.get(), 255, 0, 255, SDL_ALPHA_OPAQUE) );
+			sdlErr( SDL_RenderDrawLines(renderer.get(), &points[0], points.size()) );
 		}
 	}
-	SDL_RenderPresent(renderer);
+	if (textData) {
+		SDL_Rect rect;
+		rect.x = rect.y = 0;
+		sdlErr( SDL_QueryTexture(textData.get(), 0, 0, &rect.w, &rect.h) );
+		sdlErr( SDL_RenderCopy(renderer.get(), textData.get(), &rect, &rect) );
+	}
+	SDL_RenderPresent(renderer.get());
 }
 
 void SDLWindow::receiveSDLEvent(SDL_Event & event)
@@ -296,6 +322,9 @@ void SDLWindow::receiveSDLEvent(SDL_Event & event)
 					case SDL_CustomWindowEvent::SCROLL:
 						performScroll(reinterpret_cast<itpp::vec const *>(e.dataPtr));
 						break;
+					case SDL_CustomWindowEvent::TEXT:
+						performText(reinterpret_cast<std::string const *>(e.dataPtr));
+						break;
 					case SDL_CustomWindowEvent::GET_SIZE:
 						performSize(reinterpret_cast<std::pair<int,int> *>(e.dataPtr));
 						break;
@@ -327,10 +356,13 @@ private:
 	{
 		SDL_SetMainReady();
 		sdlErr( SDL_Init(SDL_INIT_VIDEO) );
+		sdlErr( TTF_Init() );
 		//sdlErr( SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1) );
 		//sdlErr( SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 2) );
 
 		SDL_CustomWindowEvent::TYPE = sdlErr( SDL_RegisterEvents(1) );
+
+		font = sdlErr( TTF_OpenFont("LiberationMono-Bold.ttf", 12) );
 
 		ready.set_value();
 
@@ -382,6 +414,8 @@ private:
 			}
 		} while (!quit);
 
+		TTF_CloseFont(font);
+		TTF_Quit();
 		SDL_Quit();
 	}
 

@@ -17,23 +17,26 @@ public:
 	void setLines(std::vector<itpp::vec> const &);
 	void setImage(itpp::mat const &);
 	void addRow(itpp::vec const &);
+	void setText(std::string const &);
 
 	std::pair<int, int> size();
 
 private:
 	std::mutex dataMtx;
 	std::vector<itpp::vec> vectorData;
-	struct SDL_Texture * textureData;
+	std::unique_ptr<struct SDL_Texture,void(*)(struct SDL_Texture*)> textureData;
+	std::unique_ptr<struct SDL_Texture,void(*)(struct SDL_Texture*)> textData;
 
 	void performCreate(std::pair<int,int> const * dims);
 	void performSize(std::pair<int,int> * dims);
 	void performTexture(itpp::mat const * values);
 	void performScroll(itpp::vec const * values);
+	void performText(std::string const * string);
 	void performDraw();
 	void performDestroy();
 
-	struct SDL_Window * window;
-	struct SDL_Renderer * renderer;
+	std::unique_ptr<struct SDL_Window,void(*)(struct SDL_Window*)> window;
+	std::unique_ptr<struct SDL_Renderer,void(*)(struct SDL_Renderer*)> renderer;
 
 	void receiveSDLEvent(union SDL_Event & event);
 };

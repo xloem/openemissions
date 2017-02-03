@@ -19,5 +19,6 @@ void Oscilloscope::receive(itpp::cvec const & data, double secondsDuration, doub
 		drawVecs[1][i] = data[i].imag();
 	}
 	window->setLines(drawVecs);
+	window->setText(std::to_string(tunedHertz) + " Hz");
 }
 

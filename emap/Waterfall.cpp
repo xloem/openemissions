@@ -17,4 +17,5 @@ void Waterfall::receive(itpp::cvec const & datavec, double secondsDuration, doub
 	itpp::vec mag = itpp::abs(fourier) / 64.0;
 
 	window->addRow(mag);
+	window->setText(std::to_string(tunedHertz) + " Hz");
 }
