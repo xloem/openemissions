@@ -1,7 +1,5 @@
 #include "SDL.hpp"
 
-// TODO: ensure all rendering happens in the SDL thread
-
 #include "Main.hpp"
 
 #include <algorithm>
@@ -51,16 +49,16 @@ struct SDL_CustomWindowEvent : public SDL_CommonEvent
 		CREATE,
 		DESTROY,
 		GET_SIZE,
-		TEXTURE
+		TEXTURE,
+		SCROLL
 	} subtype;
 	SDLWindow * window;
-	int w, h;
 	std::promise<void> * promise;
 
-	itpp::mat const * values;
+	void * dataPtr;
 
-	SDL_CustomWindowEvent(SubType type, SDLWindow * window, int w = 0, int h = 0, itpp::mat const * values = 0)
-	: SDL_CommonEvent({sdlErr(TYPE)}), subtype(type), window(sdlErr(window)), w(w), h(h), promise(new std::promise<void>()), values(values)
+	SDL_CustomWindowEvent(SubType type, SDLWindow * window, void const * dataPtr = 0)
+	: SDL_CommonEvent({sdlErr(TYPE)}), subtype(type), window(sdlErr(window)), promise(new std::promise<void>()), dataPtr(const_cast<void*>(dataPtr))
 	{
 		auto future = promise->get_future();
 		sdlErr( SDL_PushEvent(reinterpret_cast<SDL_Event*>(this)) );
@@ -90,14 +88,17 @@ struct SDL_CustomWindowEvent : public SDL_CommonEvent
 uint32_t SDL_CustomWindowEvent::TYPE = -1;
 
 
-SDLWindow::SDLWindow(unsigned width, unsigned height)
+SDLWindow::SDLWindow(int width, int height)
 : textureData(0)
 {
-	SDL_CustomWindowEvent(SDL_CustomWindowEvent::CREATE, this, width, height);
+	auto dims = std::make_pair(width, height);
+	SDL_CustomWindowEvent(SDL_CustomWindowEvent::CREATE, this, &dims);
 }
 
-void SDLWindow::performCreate(int width, int height)
+void SDLWindow::performCreate(std::pair<int,int> const * dims)
 {
+	int width = dims->first;
+	int height = dims->second;
 	int flags = 0;
 	if (width == 0 || height == 0) {
 		SDL_Rect bounds;
@@ -134,18 +135,19 @@ void SDLWindow::performDestroy()
 	window = 0;
 }
 
-std::pair<unsigned, unsigned> SDLWindow::size()
+std::pair<int, int> SDLWindow::size()
 {
-	SDL_CustomWindowEvent event(SDL_CustomWindowEvent::GET_SIZE, this);
-	return std::make_pair(event.w, event.h);
+	std::pair<int, int> dims;
+	SDL_CustomWindowEvent event(SDL_CustomWindowEvent::GET_SIZE, this, &dims);
+	return dims;
 }
 
-void SDLWindow::performSize(int & w, int & h)
+void SDLWindow::performSize(std::pair<int, int> * dims)
 {
-	sdlErr( SDL_GetRendererOutputSize(renderer, &w, &h) );
+	sdlErr( SDL_GetRendererOutputSize(renderer, &dims->first, &dims->second) );
 }
 
-void SDLWindow::draw(std::vector<itpp::vec> const & values)
+void SDLWindow::setLines(std::vector<itpp::vec> const & values)
 {
 	{
 		std::lock_guard<std::mutex> dataLk(dataMtx);
@@ -158,9 +160,43 @@ void SDLWindow::draw(std::vector<itpp::vec> const & values)
 	sdlErr( SDL_PushEvent(&event) );
 }
 
-void SDLWindow::draw(itpp::mat const & values)
+void SDLWindow::setImage(itpp::mat const & values)
 {
-	SDL_CustomWindowEvent event(SDL_CustomWindowEvent::TEXTURE, this, 0, 0, &values);
+	SDL_CustomWindowEvent event(SDL_CustomWindowEvent::TEXTURE, this, &values);
+}
+
+void SDLWindow::addRow(itpp::vec const & values)
+{
+	SDL_CustomWindowEvent event(SDL_CustomWindowEvent::SCROLL, this, &values);
+}
+
+void SDLWindow::performScroll(itpp::vec const * values)
+{
+	std::pair<int, int> dims;
+	if (!textureData) {
+		performSize(&dims);
+		textureData = sdlErr( SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING, dims.first, dims.second) );
+	} else {
+		sdlErr( SDL_QueryTexture(textureData, 0, 0, &dims.first, &dims.second) );
+	}
+
+	uint8_t * pixels;
+	int pitch;
+
+	sdlErr( SDL_LockTexture(textureData, 0, reinterpret_cast<void**>(&pixels), &pitch) );
+	unsigned offset = pitch * (dims.second - 1);
+	memcpy(pixels, pixels + pitch, offset);
+	uint8_t * pixel = pixels + offset;
+	for (int x = 0; x < dims.first; ++ x) {
+		int x2 = x * values->size() / dims.first;
+		uint8_t c = values->_elem(x2) * (256.0 - std::numeric_limits<double>::epsilon() * 256.0);
+		*(pixel ++) = c;
+		*(pixel ++) = c;
+		*(pixel ++) = c;
+	}
+
+	SDL_UnlockTexture(textureData);
+	performDraw();
 }
 
 void SDLWindow::performTexture(itpp::mat const * values)
@@ -168,9 +204,10 @@ void SDLWindow::performTexture(itpp::mat const * values)
 	int w = 0, h = 0;
 	if (textureData)
 		sdlErr( SDL_QueryTexture(textureData, 0, 0, &w, &h) );
-	if (w != values->rows() || h != values->cols()) {
+	int height = values->rows();
+	if (w != values->cols() || h != height) {
 		w = values->cols();
-		h = values->rows();
+		h = height;
 		SDL_DestroyTexture(textureData);
 		textureData = 0;
 		textureData = sdlErr( SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING, w, h) );
@@ -181,10 +218,10 @@ void SDLWindow::performTexture(itpp::mat const * values)
 
 	sdlErr( SDL_LockTexture(textureData, 0, reinterpret_cast<void**>(&pixels), &pitch) );
 
-	for (int y = 0; y < values->rows(); ++ y, pixels += pitch) {
+	for (int y = 0, i = 0; y < values->rows(); ++ y, pixels += pitch) {
 		uint8_t * pixel = pixels;
-		for (int x = 0; x < values->cols(); ++ x) {
-			uint8_t c = std::max(std::min(values->get(y, x) * 256.0, 255.0), 0.0);
+		for (int x = 0; x < values->cols(); ++ x, ++ i) {
+			uint8_t c = values->_elem(y, x) * (256.0 - std::numeric_limits<double>::epsilon() * 256.0);
 			*(pixel ++) = c;
 			*(pixel ++) = c;
 			*(pixel ++) = c;
@@ -248,16 +285,19 @@ void SDLWindow::receiveSDLEvent(SDL_Event & event)
 				SDL_CustomWindowEvent & e = *reinterpret_cast<SDL_CustomWindowEvent *>(& event);
 				switch(e.subtype) {
 					case SDL_CustomWindowEvent::CREATE:
-						performCreate(e.w, e.h);
+						performCreate(reinterpret_cast<std::pair<int,int> const *>(e.dataPtr));
 						break;
 					case SDL_CustomWindowEvent::DESTROY:
 						performDestroy();
 						break;
 					case SDL_CustomWindowEvent::TEXTURE:
-						performTexture(e.values);
+						performTexture(reinterpret_cast<itpp::mat const *>(e.dataPtr));
+						break;
+					case SDL_CustomWindowEvent::SCROLL:
+						performScroll(reinterpret_cast<itpp::vec const *>(e.dataPtr));
 						break;
 					case SDL_CustomWindowEvent::GET_SIZE:
-						performSize(e.w, e.h);
+						performSize(reinterpret_cast<std::pair<int,int> *>(e.dataPtr));
 						break;
 				}
 				e.done();
@@ -265,8 +305,6 @@ void SDLWindow::receiveSDLEvent(SDL_Event & event)
 			break;
 	}
 }
-
-#include <iostream>
 
 static class SDL
 {

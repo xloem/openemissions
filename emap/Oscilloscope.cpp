@@ -18,6 +18,6 @@ void Oscilloscope::receive(itpp::cvec const & data, double secondsDuration, doub
 		drawVecs[0][i] = data[i].real();
 		drawVecs[1][i] = data[i].imag();
 	}
-	window->draw(drawVecs);
+	window->setLines(drawVecs);
 }
 

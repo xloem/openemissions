@@ -28,10 +28,12 @@ Main::Main()
 
 	//FLAC_XMP flacXmp("test.flac", "test.xmp");
 
-	Oscilloscope scope0(*sources[0].get());
-	Waterfall waterfall0(*sources[0].get());
+	if (sources.size() > 0) {
+		Oscilloscope scope0(*sources[0].get());
+		Waterfall waterfall0(*sources[0].get());
 
-	stoppedFuture.wait();
+		stoppedFuture.wait();
+	}
 }
 
 Main::~Main()
