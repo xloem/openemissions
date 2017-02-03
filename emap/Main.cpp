@@ -2,6 +2,7 @@
 
 #include "Source.hpp"
 #include "Oscilloscope.hpp"
+#include "Waterfall.hpp"
 
 //#include "FLAC_XMP.hpp"
 
@@ -28,6 +29,7 @@ Main::Main()
 	//FLAC_XMP flacXmp("test.flac", "test.xmp");
 
 	Oscilloscope scope0(*sources[0].get());
+	Waterfall waterfall0(*sources[0].get());
 
 	stoppedFuture.wait();
 }

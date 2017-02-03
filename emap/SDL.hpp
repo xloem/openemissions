@@ -25,8 +25,7 @@ private:
 
 	void performCreate(int width, int height);
 	void performSize(int & width, int & height);
-	void performLock(int width, int height, void * * pixels, int * pitch);
-	void performUnlock();
+	void performTexture(itpp::mat const * values);
 	void performDraw();
 	void performDestroy();
 

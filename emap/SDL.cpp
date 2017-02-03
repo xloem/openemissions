@@ -51,18 +51,16 @@ struct SDL_CustomWindowEvent : public SDL_CommonEvent
 		CREATE,
 		DESTROY,
 		GET_SIZE,
-		LOCK,
-		UNLOCK
+		TEXTURE
 	} subtype;
 	SDLWindow * window;
 	int w, h;
 	std::promise<void> * promise;
 
-	void * * pixels;
-	int * pitch;
+	itpp::mat const * values;
 
-	SDL_CustomWindowEvent(SubType type, SDLWindow * window, int w = 0, int h = 0, uint8_t * * pixels = 0, int * pitch = 0)
-	: SDL_CommonEvent({sdlErr(TYPE)}), subtype(type), window(sdlErr(window)), w(w), h(h), promise(new std::promise<void>()), pixels(reinterpret_cast<void **>(pixels)), pitch(pitch)
+	SDL_CustomWindowEvent(SubType type, SDLWindow * window, int w = 0, int h = 0, itpp::mat const * values = 0)
+	: SDL_CommonEvent({sdlErr(TYPE)}), subtype(type), window(sdlErr(window)), w(w), h(h), promise(new std::promise<void>()), values(values)
 	{
 		auto future = promise->get_future();
 		sdlErr( SDL_PushEvent(reinterpret_cast<SDL_Event*>(this)) );
@@ -80,6 +78,12 @@ struct SDL_CustomWindowEvent : public SDL_CommonEvent
 	{
 		std::promise<void> promise = std::move(*this->promise);
 		promise.set_value();
+	}
+
+	void except()
+	{
+		std::promise<void> promise = std::move(*this->promise);
+		promise.set_exception(std::current_exception());
 	}
 };
 
@@ -156,40 +160,37 @@ void SDLWindow::draw(std::vector<itpp::vec> const & values)
 
 void SDLWindow::draw(itpp::mat const & values)
 {
-	uint8_t * pixels;
-	int pitch;
-
-	SDL_CustomWindowEvent event(SDL_CustomWindowEvent::LOCK, this, values.cols(), values.rows(), &pixels, &pitch);
-	for (int y = 0; y < values.rows(); ++ y, pixels += pitch) {
-		uint8_t * pixel = pixels;
-		for (int x = 0; x < values.cols(); ++ x) {
-			uint8_t c = std::max(std::min(values(y, x) * 256.0, 255.0), 0.0);
-			*(pixel ++) = c;
-			*(pixel ++) = c;
-			*(pixel ++) = c;
-		}
-	}
-	SDL_CustomWindowEvent(SDL_CustomWindowEvent::UNLOCK, this);
+	SDL_CustomWindowEvent event(SDL_CustomWindowEvent::TEXTURE, this, 0, 0, &values);
 }
 
-void SDLWindow::performLock(int width, int height, void * * pixels, int * pitch)
+void SDLWindow::performTexture(itpp::mat const * values)
 {
 	int w = 0, h = 0;
 	if (textureData)
 		sdlErr( SDL_QueryTexture(textureData, 0, 0, &w, &h) );
-	if (w != width || h != height) {
-		w = width;
-		h = height;
+	if (w != values->rows() || h != values->cols()) {
+		w = values->cols();
+		h = values->rows();
 		SDL_DestroyTexture(textureData);
 		textureData = 0;
 		textureData = sdlErr( SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING, w, h) );
 	}
 
-	sdlErr( SDL_LockTexture(textureData, 0, pixels, pitch) );
-}
+	uint8_t * pixels;
+	int pitch;
 
-void SDLWindow::performUnlock()
-{
+	sdlErr( SDL_LockTexture(textureData, 0, reinterpret_cast<void**>(&pixels), &pitch) );
+
+	for (int y = 0; y < values->rows(); ++ y, pixels += pitch) {
+		uint8_t * pixel = pixels;
+		for (int x = 0; x < values->cols(); ++ x) {
+			uint8_t c = std::max(std::min(values->get(y, x) * 256.0, 255.0), 0.0);
+			*(pixel ++) = c;
+			*(pixel ++) = c;
+			*(pixel ++) = c;
+		}
+	}
+
 	SDL_UnlockTexture(textureData);
 	performDraw();
 }
@@ -233,6 +234,13 @@ void SDLWindow::receiveSDLEvent(SDL_Event & event)
 			case SDL_WINDOWEVENT_EXPOSED:
 				performDraw();
 				break;
+			case SDL_WINDOWEVENT_CLOSE:
+				{
+					SDL_Event e;
+					e.type = SDL_QUIT;
+					sdlErr( SDL_PushEvent(&e) );
+				}
+				break;
 			}
 			break;
 		default: if (event.type == SDL_CustomWindowEvent::TYPE)
@@ -245,11 +253,8 @@ void SDLWindow::receiveSDLEvent(SDL_Event & event)
 					case SDL_CustomWindowEvent::DESTROY:
 						performDestroy();
 						break;
-					case SDL_CustomWindowEvent::LOCK:
-						performLock(e.w, e.h, e.pixels, e.pitch);
-						break;
-					case SDL_CustomWindowEvent::UNLOCK:
-						performUnlock();
+					case SDL_CustomWindowEvent::TEXTURE:
+						performTexture(e.values);
 						break;
 					case SDL_CustomWindowEvent::GET_SIZE:
 						performSize(e.w, e.h);
@@ -293,12 +298,15 @@ private:
 
 		SDL_Event event;
 		bool quit = false;
+		bool quitting = false;
 		do {
 			sdlErr( 0 != SDL_WaitEvent(&event) );
 			switch (event.type)
 			{
 			case SDL_WINDOWEVENT:
 				{
+					if (quitting)
+						break;
 					SDLWindow * window;
 					{
 						std::lock_guard<std::mutex> windowsLk(windowsMtx);
@@ -311,18 +319,26 @@ private:
 				}
 				break;
 			case SDL_QUIT:
-				try {
-					Main::instance().stop();
-				} catch(std::invalid_argument e) {}
 				{
 					std::lock_guard<std::mutex> windowsLk(windowsMtx);
 					quit = windows.empty();
+					if (quitting)
+						break;
+					Main::instance().stop();
+					quitting = true;
 				}
 				break;
 			default: if (event.type == SDL_CustomWindowEvent::TYPE)
 				{
-					SDLWindow * window = reinterpret_cast<SDL_CustomWindowEvent *>(&event)->window;
-					window->receiveSDLEvent(event);
+					SDL_CustomWindowEvent * e = reinterpret_cast<SDL_CustomWindowEvent *>(&event);
+					try {
+						if (quitting && e->subtype != SDL_CustomWindowEvent::DESTROY)
+							throw std::invalid_argument("quitting");
+						SDLWindow * window = e->window;
+						window->receiveSDLEvent(event);
+					} catch (...) {
+						e->except();
+					}
 					break;
 				}
 			}

@@ -9,7 +9,7 @@ public:
 	Oscilloscope(Source & source);
 	void receive(itpp::cvec const & data, double secondsDuration, double tunedHertz, double gainDB, double unixSecondsCompleted, Source & source);
 
-private:
+protected:
 	Source & source;
 	std::unique_ptr<GUIWindow> window;
 };
