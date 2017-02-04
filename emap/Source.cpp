@@ -14,10 +14,17 @@ void Destination::ready()
 	receivers.insert(this);
 }
 
-Destination::~Destination()
+void Destination::done()
 {
 	std::lock_guard<std::mutex> receiversLk(receiversMtx);
 	receivers.erase(this);
+}
+
+Destination::~Destination()
+{
+	std::lock_guard<std::mutex> receiversLk(receiversMtx);
+	if (receivers.count(this))
+		throw std::logic_error("done() never called");
 }
 
 SourceType::SourceType(std::string name)

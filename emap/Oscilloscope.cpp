@@ -6,6 +6,11 @@ Oscilloscope::Oscilloscope(Source & source)
 	ready();
 }
 
+Oscilloscope::~Oscilloscope()
+{
+	done();
+}
+
 void Oscilloscope::receive(itpp::cvec const & data, double secondsDuration, double tunedHertz, double gainDB, double unixSecondsCompleted, Source & source)
 {
 	if (&source != &this->source)

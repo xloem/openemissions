@@ -10,7 +10,8 @@ class Destination
 friend class Source;
 protected:
 	void ready();
-	virtual ~Destination();
+	void done();
+	~Destination();
 private:
 	virtual void receive(itpp::cvec const & data, double secondsDuration, double tunedHertz, double dB, double unixSecondsCompleted, class Source & source) { throw std::invalid_argument("unimplemented"); }
 };
