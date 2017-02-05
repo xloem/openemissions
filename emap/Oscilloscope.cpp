@@ -11,7 +11,7 @@ Oscilloscope::~Oscilloscope()
 	done();
 }
 
-void Oscilloscope::receive(itpp::cvec const & data, double secondsDuration, double tunedHertz, double gainDB, double unixSecondsCompleted, Source & source)
+void Oscilloscope::receiveQuadrature(itpp::cvec const & data, double samplingHz, double tunedHertz, double gainDB, double unixSecondsCompleted, Source & source)
 {
 	if (&source != &this->source)
 		return;

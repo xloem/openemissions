@@ -2,13 +2,15 @@
 
 #include "Source.hpp"
 
+#include "DriverThread.hpp"
+
 #include <mutex>
-#include <thread>
 #include <vector>
 
 #include <itpp/base/vec.h>
 
-class RtlSdr : public Source
+
+class RtlSdr : public Source, public DriverThread<std::vector<uint8_t>>
 {
 friend class RtlSdrType;
 public:
@@ -29,11 +31,13 @@ public:
 private:
 	RtlSdr(uint32_t index);
 
-	bool running;
-	std::mutex mtx;
+	std::vector<uint8_t> && construct();
+	bool fill(std::vector<uint8_t> &);
+	bool process(std::vector<uint8_t> &);
+
 	struct rtlsdr_dev *dev;
 	std::vector<int> gains;
 
-	std::thread th;
-	void run();
+	std::vector<uint8_t> commands;
+	std::mutex commandsMtx;
 };

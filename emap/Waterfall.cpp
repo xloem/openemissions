@@ -8,14 +8,14 @@ Waterfall::Waterfall(Source & source)
 
 #include <iostream>
 
-void Waterfall::receive(itpp::cvec const & datavec, double secondsDuration, double tunedHertz, double gainDB, double unixSecondsCompleted, Source & source)
+void Waterfall::receiveQuadrature(itpp::cvec const & datavec, double samplingHz, double tunedHertz, double gainDB, double unixSecondsCompleted, Source & source)
 {
 	if (&source != &this->source)
 		return;
 
-	itpp::cvec fourier = itpp::fft(datavec);
-	itpp::vec mag = itpp::abs(fourier) / 64.0;
+	itpp::vec row = itpp::abs(itpp::fft(datavec)) * (128.0 / datavec.size());
 
-	window->addRow(mag);
+	window->addRow(row);
+
 	window->setText(std::to_string(tunedHertz) + " Hz");
 }

@@ -8,7 +8,7 @@ class Oscilloscope : public Destination
 public:
 	Oscilloscope(Source & source);
 	~Oscilloscope();
-	void receive(itpp::cvec const & data, double secondsDuration, double tunedHertz, double gainDB, double unixSecondsCompleted, Source & source);
+	void receiveQuadrature(itpp::cvec const & data, double samplingHz, double tunedHertz, double gainDB, double unixSecondsCompleted, Source & source);
 
 protected:
 	Source & source;

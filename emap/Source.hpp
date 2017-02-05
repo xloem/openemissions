@@ -13,7 +13,7 @@ protected:
 	void done();
 	~Destination();
 private:
-	virtual void receive(itpp::cvec const & data, double secondsDuration, double tunedHertz, double dB, double unixSecondsCompleted, class Source & source) { throw std::invalid_argument("unimplemented"); }
+	virtual void receiveQuadrature(itpp::cvec const & data, double samplingHertz, double tunedHertz, double dBGain, double unixSecondsCompleted, class Source & source) { throw std::invalid_argument("unimplemented"); }
 };
 
 class SourceType
@@ -41,9 +41,16 @@ public:
 	virtual double dB() { throw std::invalid_argument("unimplemented"); }
 	virtual std::pair<double,double> dBRange() { throw std::invalid_argument("unimplemented"); }
 
+	virtual double setSampleHertz(double) { throw std::invalid_argument("unimplemented"); }
+	virtual double sampleHertz() { throw std::invalid_argument("unimplemented"); }
+	virtual std::pair<double,double> sampleHertzRange() { throw std::invalid_argument("unimplemented"); }
+
 	static void _register(SourceType *  source);
 	static void _deregister(std::string name);
 
 protected:
-	void dispatch(itpp::cvec const & data, double secondsDuration, double tunedHertz, double gainDB, double unixSecondsCompleted);
+	void dispatchQuadrature(itpp::cvec const & data, double samplingHertz, double tunedHertz, double dbGain, double unixSecondsCompleted);
 };
+
+#include "readerwriterqueue/readerwriterqueue.h"
+

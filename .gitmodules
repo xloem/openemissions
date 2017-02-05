@@ -1,0 +1,3 @@
+[submodule "emap/readerwriterqueue"]
+	path = emap/readerwriterqueue
+	url = https://github.com/cameron314/readerwriterqueue.git

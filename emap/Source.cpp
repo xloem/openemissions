@@ -31,12 +31,12 @@ SourceType::SourceType(std::string name)
 : name(name)
 { }
 
-void Source::dispatch(itpp::cvec const & data, double secondsDuration, double tunedHertz, double gainDB, double unixSecondsCompleted)
+void Source::dispatchQuadrature(itpp::cvec const & data, double samplingHertz, double tunedHertz, double dBGain, double unixSecondsCompleted)
 {
 	std::lock_guard<std::mutex> receiversLk(receiversMtx);
 	for (Destination * receiver : receivers)
 		try {
-			receiver->receive(data, secondsDuration, tunedHertz, gainDB, unixSecondsCompleted, *this);
+			receiver->receiveQuadrature(data, samplingHertz, tunedHertz, dBGain, unixSecondsCompleted, *this);
 		} catch (std::invalid_argument) { }
 }
 

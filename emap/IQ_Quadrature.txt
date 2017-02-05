@@ -1,0 +1,17 @@
+"Quadrature" is how the Rtl-Sdr receives high frequency signals.
+
+Basically, as I understand it, a given frequency is "tuned" to: a "virtual" signal operating
+at this frequency may be imagined.  For each sample, two values are generated, sampled at
+precise phase times for the imaginary signal.  One is at 0 degrees and one at 90 degrees.
+
+If these samples are then provided as the real and imaginary components of a complex number,
+it is as if the real signal has been multiplied by e^(pi i ...etc) with the proper tuning
+frequency, in the same way as is done in the Fourier transform.
+
+If a Fourier transform is then taken of this data, the end result is frequency shifted down
+by the tuning frequency, such that the output, centered around zero, shows what would be
+the decomposition of the input, centered around the tuning frequency, with bandwidth equal
+to sampling rate.
+
+I believe the original signal may be reconstructed from the Fourier transform, by treating
+the frequencies as offset in this way.
