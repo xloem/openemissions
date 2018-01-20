@@ -194,7 +194,7 @@ void SDLWindow::performScroll(itpp::vec const * values)
 
 	sdlErr( SDL_LockTexture(textureData.get(), 0, reinterpret_cast<void**>(&pixels), &pitch) );
 	unsigned offset = pitch * (dims.second - 1);
-	memcpy(pixels, pixels + pitch, offset);
+	memmove(pixels, pixels + pitch, offset);
 	uint8_t * pixel = pixels + offset;
 	for (int x = 0; x < dims.first; ++ x) {
 		int x2 = x * values->size() / dims.first;

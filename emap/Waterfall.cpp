@@ -15,6 +15,8 @@ void Waterfall::receiveQuadrature(itpp::cvec const & datavec, double samplingHz,
 
 	itpp::vec row = itpp::abs(itpp::fft(datavec)) * (128.0 / datavec.size());
 
+	row = itpp::concat(row,row.split(row.size()/2));
+
 	window->addRow(row);
 
 	window->setText(std::to_string(tunedHertz) + " Hz");
