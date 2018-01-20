@@ -1,6 +1,6 @@
 # OpenEmissions
 
-This is a project is focused around building open solutions to wireless information security problems that are presently not commonly available.
+OpenEmissions is focused around building open solutions to wireless information security problems that are presently not commonly available.
 
 This project was started by Karl Semich (xloem), who does not have any professional or academic experience in this area, but is passionate about it.
 
