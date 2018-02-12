@@ -3,7 +3,7 @@
 #include <itpp/signal/transforms.h>
 
 Waterfall::Waterfall(Source & source)
-: Oscilloscope(source)
+: Oscilloscope(source, "Waterfall")
 { }
 
 #include <iostream>

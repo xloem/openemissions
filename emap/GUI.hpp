@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <string>
 
 #include <itpp/base/mat.h>
 #include <itpp/base/vec.h>
@@ -22,7 +23,7 @@ public:
 
 	virtual std::pair<int, int> size() = 0;
 
-	static std::unique_ptr<GUIWindow> create(unsigned width = 0, unsigned height = 0);
+	static std::unique_ptr<GUIWindow> create(std::string title = "", unsigned width = 0, unsigned height = 0);
 
 	virtual ~GUIWindow() = 0;
 };

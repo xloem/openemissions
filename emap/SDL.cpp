@@ -92,17 +92,18 @@ struct SDL_CustomWindowEvent : public SDL_CommonEvent
 uint32_t SDL_CustomWindowEvent::TYPE = -1;
 
 
-SDLWindow::SDLWindow(int width, int height)
+SDLWindow::SDLWindow(std::string title, int width, int height)
 : textureData(0, SDL_DestroyTexture), textData(0, SDL_DestroyTexture), window(0, SDL_DestroyWindow), renderer(0, SDL_DestroyRenderer)
 {
-	auto dims = std::make_pair(width, height);
+	auto dims = std::make_tuple(title, width, height);
 	SDL_CustomWindowEvent(SDL_CustomWindowEvent::CREATE, this, &dims);
 }
 
-void SDLWindow::performCreate(std::pair<int,int> const * dims)
+void SDLWindow::performCreate(std::tuple<std::string,int,int> const * dims)
 {
-	int width = dims->first;
-	int height = dims->second;
+	std::string title = std::get<0>(*dims);
+	int width = std::get<1>(*dims);
+	int height = std::get<2>(*dims);
 	int flags = 0;
 	if (width == 0 || height == 0) {
 		SDL_Rect bounds;
@@ -116,6 +117,7 @@ void SDLWindow::performCreate(std::pair<int,int> const * dims)
 		SDL_Window * window;
 		SDL_Renderer * renderer;
 		sdlErr( SDL_CreateWindowAndRenderer(width, height, flags, &window, &renderer) );
+		SDL_SetWindowTitle(window, title.c_str());
 		this->window.reset(window);
 		this->renderer.reset(renderer);
 		windows[SDL_GetWindowID(window)] = this;
@@ -311,7 +313,7 @@ void SDLWindow::receiveSDLEvent(SDL_Event & event)
 				SDL_CustomWindowEvent & e = *reinterpret_cast<SDL_CustomWindowEvent *>(& event);
 				switch(e.subtype) {
 					case SDL_CustomWindowEvent::CREATE:
-						performCreate(reinterpret_cast<std::pair<int,int> const *>(e.dataPtr));
+						performCreate(reinterpret_cast<std::tuple<std::string,int,int> const *>(e.dataPtr));
 						break;
 					case SDL_CustomWindowEvent::DESTROY:
 						performDestroy();

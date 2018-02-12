@@ -1,7 +1,7 @@
 #include "Oscilloscope.hpp"
 
-Oscilloscope::Oscilloscope(Source & source)
-: source(source), window(GUIWindow::create())
+Oscilloscope::Oscilloscope(Source & source, std::string title)
+: source(source), window(GUIWindow::create(title))
 {
 	ready();
 }

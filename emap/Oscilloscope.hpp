@@ -6,7 +6,7 @@
 class Oscilloscope : public Destination
 {
 public:
-	Oscilloscope(Source & source);
+	Oscilloscope(Source & source, std::string title = "Oscilloscope");
 	~Oscilloscope();
 	void receiveQuadrature(itpp::cvec const & data, double samplingHz, double tunedHertz, double gainDB, double unixSecondsCompleted, Source & source);
 

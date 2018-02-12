@@ -11,7 +11,7 @@ class SDLWindow : public GUIWindow
 {
 friend class SDL;
 public:
-	SDLWindow(int width = 0, int height = 0);
+	SDLWindow(std::string title = "", int width = 0, int height = 0);
 	~SDLWindow();
 
 	void setLines(std::vector<itpp::vec> const &);
@@ -27,7 +27,7 @@ private:
 	std::unique_ptr<struct SDL_Texture,void(*)(struct SDL_Texture*)> textureData;
 	std::unique_ptr<struct SDL_Texture,void(*)(struct SDL_Texture*)> textData;
 
-	void performCreate(std::pair<int,int> const * dims);
+	void performCreate(std::tuple<std::string,int,int> const * dims);
 	void performSize(std::pair<int,int> * dims);
 	void performTexture(itpp::mat const * values);
 	void performScroll(itpp::vec const * values);
