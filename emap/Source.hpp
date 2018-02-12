@@ -11,7 +11,7 @@ friend class Source;
 protected:
 	void ready();
 	void done();
-	~Destination();
+	~Destination() noexcept(false);
 private:
 	virtual void receiveQuadrature(itpp::cvec const & data, double samplingHertz, double tunedHertz, double dBGain, double unixSecondsCompleted, class Source & source) { throw std::invalid_argument("unimplemented"); }
 };

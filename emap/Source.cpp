@@ -20,7 +20,7 @@ void Destination::done()
 	receivers.erase(this);
 }
 
-Destination::~Destination()
+Destination::~Destination() noexcept(false)
 {
 	std::lock_guard<std::mutex> receiversLk(receiversMtx);
 	if (receivers.count(this))
