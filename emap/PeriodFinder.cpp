@@ -1,7 +1,15 @@
 #include "PeriodFinder.hpp"
 
-PeriodFinder::PeriodFinder(double minFrequency, double maxFrequency, Source & source, double tunedHertz)
-: window(GUIWindow::create()), rangeHz(minFrequency, maxFrequency), source(source), tunedHz(tunedHertz)
+// TODO:
+// Right now PeriodFinder enumerates all periods.
+//
+// Ideally it would find a highly outlying period, and only collect enough samples or use enough precisionFrequency to identify this period.
+
+// TODO:
+// Such functionality should be broken into pluggable chunks so this can be a useful tool.  The user is smarter than the heuristic.
+
+PeriodFinder::PeriodFinder(double minFrequency, double maxFrequency, double precisionFrequency, Source & source, double tunedHertz)
+: window(GUIWindow::create()), rangeHz(minFrequency, maxFrequency), precisionHz(precisionFrequency), source(source), tunedHz(tunedHertz)
 {
 	init(source.sampleHertz());
 	ready();
@@ -15,10 +23,10 @@ PeriodFinder::~PeriodFinder()
 void PeriodFinder::init(double rate)
 {
 	expectedSamplingHz = rate;
-	longestPeriod = rangeHz.first / expectedSamplingHz + 1;
-	shortestPeriod = rangeHz.second / expectedSamplingHz;
+	longestPeriod = expectedSamplingHz / rangeHz.first + 1;
+	shortestPeriod = expectedSamplingHz / rangeHz.second;
 
-	values.resize(longestPeriod - shortestPeriod);
+	/*values.resize(longestPeriod - shortestPeriod);
 	weights.resize(values.size());
 	offsets.resize(values.size());
 	for (unsigned i = 0; i < values.size(); ++ i) {
@@ -26,7 +34,7 @@ void PeriodFinder::init(double rate)
 		weights[i].set_size(values[i].size());
 		weights[i].zeros();
 		offsets[i] = 0;
-	}
+	}*/
 }
 
 /*
@@ -42,7 +50,7 @@ Alternatively we could just record the information for a wide variety of periods
 
 It seems we should start with the latter, to make a nice display that would aid in deciding what determines a peak.
 
-I could use a rational fraction to describe the period length, usin ga standard rational number class, and keep a sorted list.
+I could use a rational fraction to describe the period length, using a standard rational number class, and keep a sorted list.
 Or I could more pursue just recording the data, and worry about sorting it upon display.
 
 Let's try to just record the data.  This is more the heart of the matter.
@@ -60,43 +68,181 @@ What data structures will I need to represent this?  Hmm, let's just start imple
 
 */
 #include <itpp/stat/misc_stat.h>
-double evaluateWaveform(itpp::cvec & waveform)
+double evaluateWaveform(itpp::cvec & waveform, typename itpp::cvec::value_type mean)
 {
 	// probably a better function to put here than this, who knows
-	return itpp::sum(itpp::abs(waveform - itpp::mean(waveform)));
+	return itpp::sum(itpp::abs(waveform - mean));
 }
+
+/*
+ * 2018-03-12
+ * Apparently I've tried a few times to write this function properly.
+ * I'm not quite understanding my last approach yet.
+ *
+ * I want to find the fractional period which most accurately represents the
+ * period of the underlying repeating signal.
+ *
+ * I have integral 'windows' into this period, and one approach to making that fractional
+ * is to adjust them over a long time so that, on average, they are the right length.
+ *
+ * Say I have x=11
+ * 1 2 1 2 1 2 1 2 1 2 . <= p=2, count=5
+ * 1 2 3 1 2 1 2 1 2 1 2 <= p=2.2, count=5
+ * 1 2 3 1 2 1 2 3 1 2 . <= p=2.5, count=4
+ * 1 2 3 1 2 3 1 2 1 2 3 <= p=2.75, count=4
+ * 1 2 3 1 2 3 1 2 3 . . <= p=3, count=3
+ * 1 2 3 4 1 2 3 1 2 3 . <= p=3.33, count=3
+ * 1 2 3 4 1 2 3 1 2 3 4 <= p=3.66, count=3
+ *
+ * 1 2 3 4 1 2 3 4 . . . <= p=4, count=2
+ * 1 2 3 4 5 1 2 3 4 . . <= p=4.5, count=2
+ *
+ * 1 2 3 4 5 1 2 3 4 5 . <= p=5, count=2
+ * 1 2 3 4 5 6 1 2 3 4 5 <= p=5.5, count=2
+ *
+ * Given the count of periods, there are a few fractional periods that fit.
+ * X / periodcount = longest period available in that count
+ * 
+ * A fractional period is like a set of many periods, some of them one longer than
+ * the others.
+ * The precise period is equal to (long count) / (total count) + (short length)
+ *
+ * The next explorable period has one greater 'long count' than the previous.
+ * If long count == total count, then 'short length' increases by one.
+ * If total length > # samples, then total period count must decrement.
+ * 
+ * The previous explorable period has one less 'long count' than the current.
+ * If long count would pass below 0, then the 'long length' decreases by one.
+ * If total length + short count < # samples, then the total period count must increment,
+ * and long count increments as well.
+ * If total length + short count == # samples, then the total period count must increment,
+ * and short count increments as well.
+ */
 
 void PeriodFinder::receiveQuadrature(itpp::cvec const & newData, double samplingHertz, double tunedHertz, double dBGain, double unixSecondsCompleted, class Source & source)
 {
 	if (&source != &this->source || samplingHertz != expectedSamplingHz || tunedHertz != this->tunedHz)
 		return;
 
+  // TODO: we probably don't need to store ALL of this old data ...
 	data = itpp::concat(data, newData);
 
 	itpp::vec strengths(window->size().first);
-	double totalBestValue  = -0.0/1.0;
-	itpp::vec totalBest;
+	//double totalBestValue  = -0.0/1.0;
+	//itpp::vec totalBest;
 
-	for (double intPeriod = shortestPeriod; intPeriod <= longestPeriod; ++ intPeriod) {
-		int increments = data.size() / intPeriod - 1;
+  double shortLength = floor(shortestPeriod);
+  double totalCount = floor(data.size() / shortLength);
+  double longCount = floor((shortestPeriod - shortLength) * totalCount);
 
-		int bestIncrement = -1;
+  itpp::cvec waveform(shortLength);
+  typename itpp::cvec::value_type sampleSum;
+  std::vector<int> periodStarts(totalCount);
+  bool needToInitializeWaveform = true;
+
+
+  // TODO: instead of naively looping all samples repeatedly, just add and
+	//       subtract to account for the small shifts that are happening here
+	//       such a change would be significantly faster
+  for (;;) {
+
+    // each iteration of this outer loop is a different fractional period to check
+
+    double precisePeriod = shortLength + longCount / totalCount;
+
+    if (precisePeriod > longestPeriod)
+      break;
+
+    double totalLength = shortLength * totalCount + longCount;
+
+    if (totalLength <= data.size()) {
+
+      double countPrecision = round(totalCount * expectedSamplingHz / (expectedSamplingHz / precisePeriod - precisionHz));
+      if (countPrecision < 1) countPrecision = 1;
+
+      // TODO: average waveform over entirety of periodPrecision
+  
+      // determine the average waveform for this period
+      if (needToInitializeWaveform) {
+
+        for (double i = 0; i < totalCount; ++ i)
+          periodStarts[i] = i * totalLength / totalCount;
+
+        sampleSum = 0;
+        for (double j = 0; j < shortLength; ++ j) {
+          waveform[j] = 0;
+          for (double i = 0; i < totalCount; ++ i)
+          {
+            auto sample = data[periodStarts[i] + j];
+            sampleSum += sample;
+            waveform[j] += sample;
+          }
+        }
+
+        needToInitializeWaveform = false;
+
+      } else {
+        // already have data from the last run of this shortLength; can just adjust it
+
+        for (int i = 0; i < totalCount; ++ i) {
+          int periodStart = i * totalLength / totalCount;
+          if (periodStart != periodStarts[i]) {
+            for (int j = 0; j < shortLength; ++ j) {
+              auto delta = data[periodStart + j] - data[periodStarts[i] + j];
+              sampleSum += delta;
+              waveform[j] += delta;
+            }
+            periodStarts[i] = periodStart;
+          }
+        }
+      }
+  
+      // measure and store the strength of this waveform
+      double value = evaluateWaveform(waveform, sampleSum / (totalCount * shortLength));
+			strengths[strengths.size() * (precisePeriod - shortestPeriod) / (longestPeriod - shortestPeriod)] = value;
+
+      // advance to the next period
+      longCount += countPrecision;
+
+    } else { // !(totalLength <= data.size())
+
+      // longCount stretched us longer than we have data
+      -- totalCount;
+
+      // TODO: we don't actually have to reinitialize here; we can just remove the values being dropped
+      needToInitializeWaveform = true;
+
+    }
+
+    if (longCount >= totalCount) {
+      do {
+        longCount -= totalCount;
+        ++ shortLength;
+      } while (longCount >= totalCount);
+
+      waveform.set_size(shortLength);
+      needToInitializeWaveform = true;
+    }
+  }
+
+  /*
+
+	for (double shortLength = floor(shortestPeriod); shortLength < longestPeriod; ++ shortLength) {
+    double longCount = 0;
+    int totalCount = data.size() / shortLength;
+
 		double bestPeriod;
 		double bestValue = -0.0/1.0;
 
-		itpp::cvec waveform(intPeriod);
-
-		// TODO: instead of naively looping all samples repeatedly, just add and
-		//       subtract to account for the small shifts that are happening here
-		//       such a change would be significantly faster
+		itpp::cvec waveform(shortLength);
 		for (double increment = 0; increment < increments; ++ increment) {
 			waveform.zeros();
 			for (double i = 0; i < increments; ++ i) {
-				int offset = i * ((intPeriod - 1) * increments + increment) / (increments - 1);
+				int offset = i * ((shortLength - 1) * increments + increment) / (increments - 1);
 				waveform += data.get(offset, offset + waveform.size());
 			}
 			double value = evaluateWaveform(waveform);
-			double period = intPeriod + increment / increments;
+			double period = shortLength + increment / increments;
 			strengths[strengths.size() * (period - shortestPeriod) / (longestPeriod - shortestPeriod)] = value;
 			if (value > bestValue) {
 				bestIncrement = increment;
@@ -112,8 +258,10 @@ void PeriodFinder::receiveQuadrature(itpp::cvec const & newData, double sampling
 			strengths[strengths.size() * (bestPeriod - shortestPeriod) / (longestPeriod - shortestPeriod)] = bestValue;
 		}
 	}
+  */
 
-	window->setLines({strengths, totalBest});
+	//window->setLines({strengths, totalBest});
+  window->setLines({strengths});
 		/*
 but really we should choose X - X/period to begin
 and stretch it X/period increments to the right.

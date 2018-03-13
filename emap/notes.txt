@@ -1,0 +1,13 @@
+Keylogging:
+  While watching for the pixel clock signal in osmocom_fft,
+  I noticed there is a signal during keypress.  75.67 MHz and 77.68 MHz
+  show a traveling FM signal while a key is pressed.
+  At 2.4MHz sample rate, this signal appears to oscillate weak/strong every
+  other FFT line, implying it contains data that could be amplified by summing over time.
+
+  To see this:
+    Using the keyboard of my Dell Latitude E6430, with the rtl-sdr nooelec antenna leaning against the LCD panel:
+    $ osmocom_fft -a rtl=0 -Wv -s 2.4M -f 76.75M -g 50
+    hit autoscale, then watch the left and right edges of the waterfall as a key is pressed and released
+
+  Note: I tried this again after a bit, and the effect had moved to ~77.5 MHz
