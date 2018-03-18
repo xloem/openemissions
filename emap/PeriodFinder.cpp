@@ -1,12 +1,39 @@
 #include "PeriodFinder.hpp"
 
+#include <iostream>
+
+// TODO:
+// Okay ... it looks like the video signal I thought I was finding was just noise in memory.
+// Due to a bug in countPrecision, it was only calculating for the highest frequency.
+//
+// I thought I fixed the bug, but then it ran so slowly it didn't really do anything ...
+// I have yet to demonstrate that convolving the complex stream with itself will show the refresh rate.
+// At this low sample-rate, the absolute magnitude or the frequency domain may be needed, or peaks from distant parts of the spectrum that would reveal underlying shapes.
+//
+// I could perhaps check for this information quickly in gnuradio by performing an fft or a waterfall that actually covered 60 Hz
+//      This would be done by decimating the signal down enough that a reasonably-sized fft would include 60 Hz.
+// Gnuradio I believe has a peak detector that could be used afterwards, but I'd probably need to write my own blocks to find the precise period
+// and then amplify it.
+
+// TWO RUNTIME ERRORS:
+// -- occasional segfault, somehow strengths[] is getting cleared! data = 0 at crash
+// -- when totalBest is stored, strengths seem to become corrupted !
+
 // TODO:
 // Right now PeriodFinder enumerates all periods.
 //
 // Ideally it would find a highly outlying period, and only collect enough samples or use enough precisionFrequency to identify this period.
-
-// TODO:
+//
 // Such functionality should be broken into pluggable chunks so this can be a useful tool.  The user is smarter than the heuristic.
+//
+// Let's factor out the period correlation function, and the buffer accumulation.  This class can be turned into a single function that
+// finds a precisely high period.  Generally-high periods can be found with a separate function that perhaps uses downsample + fft.
+
+// "LEVELS" of period finding:
+// 1. general: perhaps use downsampled data to find wide swaths of periods
+// 2. precise & memory intensive: find arrangement of periods over a long IQ recording that maximizes an evaluation function
+// 3. unlimited precision: do #2 over and over, but don't store the data because we already know the frequency within sample resolution
+//                         observe drift over time to increase precision of frequency
 
 PeriodFinder::PeriodFinder(double minFrequency, double maxFrequency, double precisionFrequency, Source & source, double tunedHertz)
 : window(GUIWindow::create()), rangeHz(minFrequency, maxFrequency), precisionHz(precisionFrequency), source(source), tunedHz(tunedHertz)
@@ -38,86 +65,18 @@ void PeriodFinder::init(double rate)
 }
 
 /*
-Okay !
-So, we've received X samples.
-We want to consider all the possible periods this includes.
-So, a period is defined by a rational fraction, basically.  It's a length of recording, and a number of periods within it.  It could continue at that length.
-As we record more, we have more period lengths to deal with, because we encounter smaller rational fractions.
-At some point we could, theoretically, encounter the "exact" period ... but realistically as we record more we will continue to narrow down our description of an avg period length to make
-it more and more exact, forever.
-So memory could be conserved by having a concept of signal peaks, and narrowing down those peaks.
+Memory could be conserved by having a concept of signal peaks, and narrowing down those peaks.
 Alternatively we could just record the information for a wide variety of periods, and display those.
 
 It seems we should start with the latter, to make a nice display that would aid in deciding what determines a peak.
-
-I could use a rational fraction to describe the period length, using a standard rational number class, and keep a sorted list.
-Or I could more pursue just recording the data, and worry about sorting it upon display.
-
-Let's try to just record the data.  This is more the heart of the matter.
-
-We have X samples.
-we have N integral period lengths.
-We can take those X samples and divide them for each period length.
-For each integral period length, it has a Y number of samples that it divides well.  For the Y immediately prior to X, we get the highest resolution
-by trying this period length for all values between Y and X.  But this leaves part of the period length unexplored, that part from X to the next highest Y above X.
-So it would be better to consider Y immediately prior to X, and then consider the period lengths between Y-period and Y.
-
-This is the way to go.
-
-What data structures will I need to represent this?  Hmm, let's just start implementing it.
-
 */
-#include <itpp/stat/misc_stat.h>
-double evaluateWaveform(itpp::cvec & waveform, typename itpp::cvec::value_type mean)
-{
-	// probably a better function to put here than this, who knows
-	return itpp::sum(itpp::abs(waveform - mean));
-}
 
-/*
- * 2018-03-12
- * Apparently I've tried a few times to write this function properly.
- * I'm not quite understanding my last approach yet.
- *
- * I want to find the fractional period which most accurately represents the
- * period of the underlying repeating signal.
- *
- * I have integral 'windows' into this period, and one approach to making that fractional
- * is to adjust them over a long time so that, on average, they are the right length.
- *
- * Say I have x=11
- * 1 2 1 2 1 2 1 2 1 2 . <= p=2, count=5
- * 1 2 3 1 2 1 2 1 2 1 2 <= p=2.2, count=5
- * 1 2 3 1 2 1 2 3 1 2 . <= p=2.5, count=4
- * 1 2 3 1 2 3 1 2 1 2 3 <= p=2.75, count=4
- * 1 2 3 1 2 3 1 2 3 . . <= p=3, count=3
- * 1 2 3 4 1 2 3 1 2 3 . <= p=3.33, count=3
- * 1 2 3 4 1 2 3 1 2 3 4 <= p=3.66, count=3
- *
- * 1 2 3 4 1 2 3 4 . . . <= p=4, count=2
- * 1 2 3 4 5 1 2 3 4 . . <= p=4.5, count=2
- *
- * 1 2 3 4 5 1 2 3 4 5 . <= p=5, count=2
- * 1 2 3 4 5 6 1 2 3 4 5 <= p=5.5, count=2
- *
- * Given the count of periods, there are a few fractional periods that fit.
- * X / periodcount = longest period available in that count
- * 
- * A fractional period is like a set of many periods, some of them one longer than
- * the others.
- * The precise period is equal to (long count) / (total count) + (short length)
- *
- * The next explorable period has one greater 'long count' than the previous.
- * If long count == total count, then 'short length' increases by one.
- * If total length > # samples, then total period count must decrement.
- * 
- * The previous explorable period has one less 'long count' than the current.
- * If long count would pass below 0, then the 'long length' decreases by one.
- * If total length + short count < # samples, then the total period count must increment,
- * and long count increments as well.
- * If total length + short count == # samples, then the total period count must increment,
- * and short count increments as well.
- */
+#include <itpp/stat/misc_stat.h>
+double evaluateWaveform(itpp::cvec & waveform, double scale, typename itpp::cvec::value_type mean)
+{
+  // TODO: make this pluggable; waveform plug-in should probably handle recording the peak too
+  return (itpp::sum(itpp::abs(waveform - mean))) / waveform.size() / scale;
+}
 
 void PeriodFinder::receiveQuadrature(itpp::cvec const & newData, double samplingHertz, double tunedHertz, double dBGain, double unixSecondsCompleted, class Source & source)
 {
@@ -125,11 +84,13 @@ void PeriodFinder::receiveQuadrature(itpp::cvec const & newData, double sampling
 		return;
 
   // TODO: we probably don't need to store ALL of this old data ...
+  // for sure!  it's crashing the prog due to memory exhaustion
 	data = itpp::concat(data, newData);
 
 	itpp::vec strengths(window->size().first);
-	//double totalBestValue  = -0.0/1.0;
-	//itpp::vec totalBest;
+	double totalBestValue  = -0.0/1.0;
+  double totalBestPeriod = 0;
+	itpp::vec totalBest;
 
   double shortLength = floor(shortestPeriod);
   double totalCount = floor(data.size() / shortLength);
@@ -141,13 +102,8 @@ void PeriodFinder::receiveQuadrature(itpp::cvec const & newData, double sampling
   bool needToInitializeWaveform = true;
 
 
-  // TODO: instead of naively looping all samples repeatedly, just add and
-	//       subtract to account for the small shifts that are happening here
-	//       such a change would be significantly faster
   for (;;) {
-
-    // each iteration of this outer loop is a different fractional period to check
-
+    // each iteration of this outer loop is a different fractional period to check, defined by this formula:
     double precisePeriod = shortLength + longCount / totalCount;
 
     if (precisePeriod > longestPeriod)
@@ -155,12 +111,12 @@ void PeriodFinder::receiveQuadrature(itpp::cvec const & newData, double sampling
 
     double totalLength = shortLength * totalCount + longCount;
 
+    // TODO: maybe not use countPrecision, increment longCount by one, and use a different heuristic for finding imprecise periods?
+    double countPrecision = 1 / (1 / precisePeriod - precisionHz / expectedSamplingHz) - precisePeriod;
+
     if (totalLength <= data.size()) {
 
-      double countPrecision = round(totalCount * expectedSamplingHz / (expectedSamplingHz / precisePeriod - precisionHz));
-      if (countPrecision < 1) countPrecision = 1;
-
-      // TODO: average waveform over entirety of periodPrecision
+      // TODO: average waveform over entirety of periodPrecision, if countPrecision > 1
   
       // determine the average waveform for this period
       if (needToInitializeWaveform) {
@@ -198,8 +154,16 @@ void PeriodFinder::receiveQuadrature(itpp::cvec const & newData, double sampling
       }
   
       // measure and store the strength of this waveform
-      double value = evaluateWaveform(waveform, sampleSum / (totalCount * shortLength));
+      double denom = totalCount * shortLength;
+      double value = evaluateWaveform(waveform, denom, sampleSum / denom);
 			strengths[strengths.size() * (precisePeriod - shortestPeriod) / (longestPeriod - shortestPeriod)] = value;
+
+      if (value > totalBestValue) {
+        totalBestValue = value;
+        totalBestPeriod = precisePeriod;
+        // TODO: uncommenting the following seems to corrupt things somehow ...
+        //totalBest = itpp::abs(waveform);
+      }
 
       // advance to the next period
       longCount += countPrecision;
@@ -224,6 +188,7 @@ void PeriodFinder::receiveQuadrature(itpp::cvec const & newData, double sampling
       needToInitializeWaveform = true;
     }
   }
+
 
   /*
 
@@ -262,6 +227,8 @@ void PeriodFinder::receiveQuadrature(itpp::cvec const & newData, double sampling
 
 	//window->setLines({strengths, totalBest});
   window->setLines({strengths});
+  std::cout << "Peak = " << (1 / totalBestPeriod * samplingHertz) << " Hz   " << (totalBestPeriod / samplingHertz) << " s" << std::endl;
+  std::cout << "Value = " << totalBestValue << std::endl;
 		/*
 but really we should choose X - X/period to begin
 and stretch it X/period increments to the right.
