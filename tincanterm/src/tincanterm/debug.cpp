@@ -24,10 +24,10 @@ void debug(long number)
     number = -number;
   }
 
-  if (number > 10000) debug(char('0' + ((number / 10000) % 10)));
-  if (number > 1000) debug(char('0' + ((number / 1000) % 10)));
-  if (number > 100) debug(char('0' + ((number / 100) % 10)));
-  if (number > 10) debug(char('0' + ((number / 10) % 10)));
+  if (number >= 10000) debug(char('0' + ((number / 10000) % 10)));
+  if (number >= 1000) debug(char('0' + ((number / 1000) % 10)));
+  if (number >= 100) debug(char('0' + ((number / 100) % 10)));
+  if (number >= 10) debug(char('0' + ((number / 10) % 10)));
   debug(char('0' + (number % 10)));
 }
 
