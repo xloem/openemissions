@@ -21,7 +21,7 @@ unsigned asciiToWire(char ascii)
   if (ascii == LINEBREAK)
     return WIRE_LINEBREAK;
   unsigned wire = ascii - ASCII_MIN;
-  if (wire < WIRE_MAX)
+  if (wire < WIRE_MAX && wire != WIRE_LINEBREAK)
     return wire;
   else
     return asciiToWire('?');

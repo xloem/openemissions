@@ -9,17 +9,14 @@
 
 #include <Arduino.h>
 
-#define DOWN 1
-#define UP 2
+#define DOWN INPUT
+#define UP INPUT_PULLUP
 
 void implInit()
 {
   Serial.begin(LOCAL_BAUD);
 
-  pinMode(INPUT_PORT, INPUT_PULL == UP ? INPUT_PULLUP : INPUT);
-  #if INPUT_DRAIN
-    #error INPUT_DRAIN unimplemented on arduino
-  #endif
+  pinMode(INPUT_PORT, INPUT_PULL);
 
   pinMode(OUTPUT_PORT, OUTPUT);
 }
@@ -36,6 +33,12 @@ void implRemoteSend(bool trueOrFalse)
 
 bool implRemoteRecv()
 {
+  #if INPUT_DRAIN
+  pinMode(INPUT_PORT, OUTPUT);
+  digitalWrite(INPUT_PORT, LOW);
+  pinMode(INPUT_PORT, INPUT_PULL);
+  #endif
+
   return digitalRead(INPUT_PORT) == HIGH;
 }
 

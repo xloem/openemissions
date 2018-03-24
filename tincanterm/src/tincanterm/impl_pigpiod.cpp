@@ -72,6 +72,11 @@ void implSend(bool trueOrFalse)
 
 bool implRead()
 {
+	#if INPUT_DRAIN
+	set_mode(pi, INPUT_PORT, PI_OUTPUT);
+  gpio_write(pi, INPUT_PORT, 0);
+	set_mode(pi, INPUT_PORT, PI_INPUT);
+  #endif
 	return gpio_read(pi, INPUT_PORT);
 }
 

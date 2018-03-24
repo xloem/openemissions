@@ -1,8 +1,8 @@
 #include "tincanterm.h"
-#include "impl.h"
-#include "codec.h"
 
-#include "Arduino.h"
+#include "codec.h"
+#include "debug.h"
+#include "impl.h"
 
 // State for encoding or decoding a character
 struct CodingState
@@ -20,20 +20,6 @@ struct CodingState
   unsigned bit;
 };
 
-#ifdef NDEBUG
-#define debug(arg) 
-#else
-void debug(char message) {
-  implLocalSend(message);
-}
-void debug(char const * message) {
-  while (message[0]) {
-    debug(message[0]);
-    message = message + 1;
-  }
-}
-#endif
-
 int main()
 {
   struct CodingState recvState;
@@ -45,7 +31,10 @@ int main()
   implInit();
 
   // Begin in resting state
-  debug("-> LOW init"); debug(LINEBREAK);
+  debug("-> ");
+    debug((long)OUTPUT_PORT);
+    debug(" LOW init");
+    debug(LINEBREAK);
   implRemoteSend(false);
 
   while (true)
@@ -61,21 +50,25 @@ int main()
       if (implLocalAvail()) {
 
         // Load character
-        unsigned char character = implLocalRecv();
+        char character = implLocalRecv();
         debug("-> sending character ");
-          if (character >= 100) debug('0' + ((character / 100) % 10));
-          if (character >= 10) debug('0' + ((character / 10) % 10));
-          debug('0' + (character % 10));
+          debug((long)character);
           debug(LINEBREAK);
          
         // Start sending character
-        debug("-> HIGH start"); debug(LINEBREAK);
+        debug("-> ");
+          debug((long)OUTPUT_PORT);
+          debug(" HIGH start");
+          debug(LINEBREAK);
         implRemoteSend(true);
 
         sendState.active = true;
         sendState.wire = asciiToWire(character);
         sendState.start = msNow + BIT_MS;
         sendState.bit = 0;
+        debug("-> encoding as ");
+          debug((long)sendState.wire);
+          debug(LINEBREAK);
 
       }
 
@@ -92,8 +85,10 @@ int main()
   
         // Send the bit
         bool bitValue = (sendState.wire >> sendState.bit) & 1;
-        debug("-> Bit ");
-          debug('0' + sendState.bit);
+        debug("-> ");
+          debug((long)OUTPUT_PORT);
+          debug(" Bit ");
+          debug((long)sendState.bit);
           debug(": ");
           debug(bitValue ? "HIGH" : "LOW");
           debug(LINEBREAK);
@@ -111,13 +106,19 @@ int main()
 
       // Check for starting HIGH
       if (implRemoteRecv()) {
-        debug("<- HIGH start"); debug(LINEBREAK);
+        debug("<- ");
+          debug((long)INPUT_PORT);
+          debug(" HIGH start");
+          debug(LINEBREAK);
 
         // Start receiving character
         recvState.active = true;
         recvState.wire = 0;
         recvState.start = msNow + SETTLE_MS + BIT_MS;
         recvState.bit = 0;
+
+      } else {
+        debug(implRemoteRecv() ? "(1)" : "(0)");
       }
 
     } else if (msNow >= recvState.start) {
@@ -129,15 +130,24 @@ int main()
         recvState.active = false;
         
         // decode and forward to user
-        implLocalSend(wireToAscii(recvState.wire));
+        debug("<- received ");
+          debug((long)recvState.wire);
+          debug(LINEBREAK);
+        char character = wireToAscii(recvState.wire);
+        debug("<- decoded to ");
+          debug((long)character);
+          debug(LINEBREAK);
+        implLocalSend(character);
 
       } else {
       
         // Read the bit
         bool bitValue = implRemoteRecv();
   
-        debug("<- Bit ");
-          debug('0' + recvState.bit);
+        debug("<- ");
+          debug((long)INPUT_PORT);
+          debug(" Bit ");
+          debug((long)recvState.bit);
           debug(": ");
           debug(bitValue ? "HIGH" : "LOW");
           debug(LINEBREAK);
@@ -149,6 +159,8 @@ int main()
         recvState.start += BIT_MS;
         recvState.bit += 1;
       }
+    } else {
+      debug(implRemoteRecv() ? "(1)" : "(0)");
     }
   }
 
