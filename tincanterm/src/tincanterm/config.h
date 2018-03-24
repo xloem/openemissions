@@ -1,5 +1,6 @@
 #pragma once
 
+
 // which implementation to use
 #define IMPL        ARDUINO
 
@@ -9,11 +10,14 @@
 // identifier for output port
 #define OUTPUT_PORT 5
 
-// milliseconds to spend sending each bit (inverse baud in ms)
-#define BIT_MS 10
+// Character to use for linebreak
+#define LINEBREAK '\n'
 
-// delay to allow bit value to settle
-#define SETTLE_MS 2
+// milliseconds to spend sending each bit (inverse baud in ms)
+#define BIT_MS 5
+
+// delay to allow bit value to settle when reading
+#define SETTLE_MS 0
 
 // baud rate for local communications, if applicable
 #define LOCAL_BAUD 9600
@@ -25,3 +29,5 @@
 // this drains stored charge
 #define INPUT_DRAIN 0
 
+// unset to enable debugging output
+#define NDEBUG

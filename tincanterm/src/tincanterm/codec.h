@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include "config.h"
+
 #define WIRE_MAX 96
 #define WIRE_BITS 7
 

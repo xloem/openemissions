@@ -3,13 +3,13 @@
 // The intent here is that only printable characters, space, and carriage return are used.
 // Everything else is turned into a '?'.
 
-#define WIRE_CR (WIRE_MAX - 1)
+#define WIRE_LINEBREAK (WIRE_MAX - 1)
 #define ASCII_MIN ' '
 
 char wireToAscii(unsigned wire)
 {
-  if (wire == WIRE_CR)
-    return '\n';
+  if (wire == WIRE_LINEBREAK)
+    return LINEBREAK;
   else if (wire < WIRE_MAX)
     return ' ' + wire;
   else
@@ -18,8 +18,8 @@ char wireToAscii(unsigned wire)
 
 unsigned asciiToWire(char ascii)
 {
-  if (ascii == '\n')
-    return WIRE_CR;
+  if (ascii == LINEBREAK)
+    return WIRE_LINEBREAK;
   unsigned wire = ascii - ASCII_MIN;
   if (wire < WIRE_MAX)
     return wire;
