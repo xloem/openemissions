@@ -1,0 +1,9 @@
+[Unit]
+Description=Square Wave on Output 4
+
+[Service]
+ExecStart=/usr/bin/nice --20 /usr/local/sbin/noiscillate 4 40
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
