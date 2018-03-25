@@ -12,8 +12,8 @@
  * Photoresistor wiring:
  *    First leg connects to +5V
  *    Second leg connects to ARDUINO PIN 4
- *    Second leg additionally connecs to two 10K Ohm resistors wired in series (end-to-end), which connect to GROUND
- *      This high-resistance connection to ground acts as pull-down on the arduino pin.
+ *    Second leg additionally connects to two 33K Ohm resistors wired in series (end-to-end), which connect to GROUND
+ *      This high-resistance connection to ground acts as pull-down on the arduino pin, making a voltage divider with the photoresistor.
  *      The resistance may need to be increased if the system reads LOW/FALSE/0 when it should not
  *      The resistance may need to be decreased if the system reads HIGH/TRUE/1 when it should not
  *      This can be checked by commenting the NDEBUG definition at the bottom of this file.
@@ -37,10 +37,10 @@
 #define LINEBREAK '\n'
 
 // milliseconds to spend sending each bit (inverse baud in ms)
-#define BIT_MS 2
+#define BIT_MS 61
 
 // delay to make sure bit value has settled when reading
-#define SETTLE_MS 0
+#define SETTLE_MS 31
 
 // pull resistor direction for input port
 #define INPUT_PULL  DOWN

@@ -39,9 +39,6 @@ int main()
 
   while (true)
   {
-    // check time once per loop
-    unsigned long msNow = implMillis();
-
     // Sending
     if (! sendState.active) {
       // not in the process of sending
@@ -60,11 +57,11 @@ int main()
           debug((long)OUTPUT_PORT);
           debug(" HIGH start");
           debug(LINEBREAK);
-        implRemoteSend(true);
 
         sendState.active = true;
         sendState.wire = asciiToWire(character);
-        sendState.start = msNow + BIT_MS;
+        sendState.start = implMillis() + BIT_MS;
+        implRemoteSend(true);
         sendState.bit = 0;
         debug("-> encoding as ");
           debug((long)sendState.wire);
@@ -72,7 +69,7 @@ int main()
 
       }
 
-    } else if (msNow >= sendState.start) {
+    } else if (implMillis() >= sendState.start) {
       // we're sending and it's time to send the next bit
 
       // an extra bit is sent to return to the resting state
@@ -85,6 +82,7 @@ int main()
   
         // Send the bit
         bool bitValue = (sendState.wire >> sendState.bit) & 1;
+        implRemoteSend(bitValue);
         debug("-> ");
           debug((long)OUTPUT_PORT);
           debug(" Bit ");
@@ -92,7 +90,6 @@ int main()
           debug(": ");
           debug(bitValue ? "HIGH" : "LOW");
           debug(LINEBREAK);
-        implRemoteSend(bitValue);
   
         // Update state
         sendState.start += BIT_MS;
@@ -114,14 +111,14 @@ int main()
         // Start receiving character
         recvState.active = true;
         recvState.wire = 0;
-        recvState.start = msNow + SETTLE_MS + BIT_MS;
+        recvState.start = implMillis() + SETTLE_MS + BIT_MS;
         recvState.bit = 0;
 
       } else {
         debug(implRemoteRecv() ? "(1)" : "(0)");
       }
 
-    } else if (msNow >= recvState.start) {
+    } else if (implMillis() >= recvState.start) {
       // we're receiving and it's time to read the next bit
 
       if (recvState.bit >= WIRE_BITS) {

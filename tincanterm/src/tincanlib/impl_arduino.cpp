@@ -9,6 +9,9 @@
 
 #include <Arduino.h>
 
+// There's also a trick inside tincanlib.h for renaming main.
+#include "tincanlib.h"
+
 #define DOWN INPUT
 #define UP INPUT_PULLUP
 
@@ -58,6 +61,15 @@ char implLocalRecv()
 }
 
 void implDestroy()
+{
+}
+
+void setup()
+{
+  impl_arduino_main();
+}
+
+void loop()
 {
 }
 
