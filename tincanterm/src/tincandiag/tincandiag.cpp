@@ -45,13 +45,14 @@ int main()
     double toHighMax = 0;
 
     double count = 0;
-    double msTotal = 0;
 
     long highCount, lowCount;
 
     print("\r\n");
+
+    long msTotalComparator = implMillis();
     
-    while (msTotal < 500)
+    while (implMillis() - msTotalComparator < 5000)
     {
       // output summary
       print("\r___ ");
@@ -130,7 +131,6 @@ int main()
         }
       }
   
-      msTotal += msDelay;
       if (newstate) {
         toHighSum += msDelay;
         if (msDelay > toHighMax)
@@ -145,8 +145,6 @@ int main()
           toLowMin = msDelay;
       }
 
-      if (msTotal >= 500) break;
-  
       // update count
       ++ count;
 
