@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
 import argparse, os, sys, time
 
@@ -50,13 +50,13 @@ class WatchedFile:
 
     def __init__(self, f):
         self.file = f
-        self.lastSize = os.stat(self.file.fileno()).st_size
+        self.lastSize = os.stat(self.file.name).st_size
         self.header = WatchedFile.spbfmt.read_header(self.file)
         if self.header is None:
             raise ValueError('invalid file format')
 
     def grown(self):
-        size = os.stat(self.file.fileno()).st_size
+        size = os.stat(self.file.name).st_size
         if size > self.lastSize:
             self.lastSize = size
             return True
@@ -97,13 +97,13 @@ class NoiseSource:
 
         tuned_freq = (header.stop - header.start) / 2 + header.start
 
-        print('{} {} Hz {} dB {} MHz {}'.format(time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(header.time_start)), self.freq, avgDb, tuned_freq / 1000000, fil.header[1]))
+        sys.stdout.write('{} {} Hz {} dB {} MHz {}\n'.format(time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(header.time_start)), self.freq, avgDb, tuned_freq / 1000000, fil.header[1]))
 
 dirs = [WatchedDir(d) for d in args.dir]
 
 files = [WatchedFile(f) for f in args.file]
 for d in dirs:
-    print('Scanning {} ...'.format(d.path), end='\r')
+    sys.stdout.write('Scanning {} ...\r'.format(d.path))
     files.extend(d.more())
 
 sources = [NoiseSource(freq) for freq in args.freq]
@@ -117,7 +117,7 @@ while True:
     growth = False
     deadline = time.time() + WatchedFile.minsecs / 2
     for d in dirs:
-        print('Scanning {} ...'.format(d.path), end='\r')
+        sys.stdout.write('Scanning {} ...\r'.format(d.path))
         files.extend(d.more())
     for f in files:
         if f.grown():
@@ -127,5 +127,5 @@ while True:
                     source.process(f, *spectrum)
     now = time.time()
     if not growth and now < deadline:
-        print('sleeping until {} ... ...'.format(time.strftime('%H:%M:%S', time.gmtime(deadline))), end='\r')
+        sys.stdout.write('sleeping until {} ... ...\r'.format(time.strftime('%H:%M:%S', time.gmtime(deadline))))
         time.sleep(deadline - now)
