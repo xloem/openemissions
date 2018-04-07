@@ -74,30 +74,33 @@ class WatchedFile:
             result = WatchedFile.spbfmt.read(self.file)
         return results
 
+def ExactPeakAverage(freq, array, step, log):
+    # DC is at center array, equal to half length
+    dc = int(len(array) / 2)
+
+    # we care about magnitude every freq bins above that (the harmonics)
+    num_harmonics = int((dc - 1) * step / freq)
+
+    harmonics = [round(dc + i * freq / step) for i in range(1, num_harmonics + 1)]
+    harmonics = [array[h] for h in harmonics]
+
+    if not log:
+        harmonics = 10 * numpy.log10(harmonics)
+
+    return numpy.sum(harmonics) / num_harmonics
+ 
 
 class NoiseSource:
     def __init__(self, freq):
         self.freq = float(freq)
 
     def process(self, fil, header, array):
-        # DC is at center array, equal to half length
-        dc = int(len(array) / 2)
-
-        # we care about magnitude every freq bins above that (the harmonics)
-        num_harmonics = int((dc - 1) * header.step / self.freq)
-
-        harmonics = [round(dc + i * self.freq / header.step) for i in range(1, num_harmonics + 1)]
-        harmonics = [array[h] for h in harmonics]
-
-        if not fil.header[0]['sweep'].log_scale:
-            harmonics = 10 * numpy.log10(harmonics)
-
-        # TODO: do something smarter than averaging the peak height
-        avgDb = numpy.sum(harmonics) / num_harmonics
 
         tuned_freq = (header.stop - header.start) / 2 + header.start
 
-        sys.stdout.write('{} {} Hz {} dB {} MHz {}\n'.format(time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(header.time_start)), self.freq, avgDb, tuned_freq / 1000000, fil.header[1]))
+	dB = ExactPeakAverage(self.freq, array, header.step, fil.header[0]['sweep'].log_scale)
+
+        sys.stdout.write('{} {} Hz {} dB {} MHz {}\n'.format(time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(header.time_start)), self.freq, dB, tuned_freq / 1000000, fil.header[1]))
 
 dirs = [WatchedDir(d) for d in args.dir]
 
