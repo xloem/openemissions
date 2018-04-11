@@ -11,3 +11,23 @@ Keylogging:
     hit autoscale, then watch the left and right edges of the waterfall as a key is pressed and released
 
   Note: I tried this again after a bit, and the effect had moved to ~77.5 MHz
+
+Signal Finding:
+  - ELF FFT
+      I tried decimating the signal down by 8k in gnuradio and threw the result
+      at fosphor.  It just found signals very close to 77.5 MHz until I also
+      converted the complex signal to the real magnitude, and then the 60 Hz
+      refresh rate showed up.  Also a signal around 90 Hz and around 120 Hz,
+      which is strange, and a weak 10 Hz signal with strong harmonics.
+      
+      The strange bit was that 90 Hz was stronger than 60 Hz.
+
+      Unfortunately, just using this approach with fosphor via gnuradio is very
+      slow, because it accumulates 1024 samples per row and doesn't even update
+      the display every row.  I think 1024 samples is around 3 seconds!
+
+      I feel the need for conversion to the real domain is indicated by not
+      being precisely tuned to the clock rate, such that each frame has a
+      different phase.  I guess one solution would be to phase shift each
+      frame such that they line up.  But that won't be needed for just
+      noise measurement.
