@@ -2,7 +2,7 @@
 
 import argparse, os, sys, time
 
-import numpy
+import numpy as np
 
 from soapypower.writer import SoapyPowerBinFormat
 
@@ -72,7 +72,7 @@ class WatchedFile:
                 WatchedFile.minsecs = secs
             results.append(result)
             result = WatchedFile.spbfmt.read(self.file)
-        return results
+        return np.array(results)
 
 def ExactPeakAverage(freq, array, step, log):
     # DC is at center array, equal to half length
@@ -85,9 +85,91 @@ def ExactPeakAverage(freq, array, step, log):
     harmonics = [array[h] for h in harmonics]
 
     if not log:
-        harmonics = 10 * numpy.log10(harmonics)
+        harmonics = 10 * np.log10(harmonics)
 
-    return numpy.sum(harmonics) / num_harmonics
+    return np.sum(harmonics) / num_harmonics
+
+def AccumulateCurve(freq, data, step, log):
+	periodSamp = freq / step
+	periodBoxExtent = int(periodSamp / 2)
+
+	periodArray = np.array([])
+
+	# if true, will continue finding peaks through entire spectrum
+	KEEPGOING = False
+	
+	CUTOFF = 100
+
+	# remove data below DC
+	data = data[int(len(data) / 2):]
+
+	# convert to arithmetic domain
+	if log:
+		data = 10 ** (data / 10)
+	data = np.sqrt(data)
+
+	numpeaks = int(len(data) / periodSamp - 0.5)
+
+	# to accumulate blocks, we'll want to identify the mean peak height
+	# and also the standard deviation of the noise contributing to it
+	# we assume blocks are valid when the peak height is at least some multiple
+	# of this standard distribution
+
+	peakPeriods = []
+	periodSum = np.zeros(periodBoxExtent * 2)
+	periodCount = 0
+
+	for peakid in range(numpeaks):
+		peakSamp = int(round((peakid + 1) * periodSamp))
+		peakPeriod = data[peakSamp - periodBoxExtent:peakSamp + periodBoxExtent]
+
+		periodN = periodArray.shape[0]
+		periodArray.resize((periodN + 1, peakPeriod.size), refcheck = False)
+		periodArray[periodN] = peakPeriod
+
+		if periodN == 0:
+			continue
+
+		peaks = periodArray[:,np.array([-1,0,1])+periodBoxExtent].mean(axis=1)
+		antipeaks = periodArray[:,[-1,0,1]].mean(axis=1)
+		
+		noisefloor = antipeaks.mean()
+		stddev = np.sqrt(np.sum((antipeaks - noisefloor) ** 2) / (antipeaks.size - 1))
+		
+		peakheight = peaks.mean() - noisefloor
+
+		# TODO: we may be concerned with regard to a minimum or maximum peak height.
+		#  in this case we may want to use 3*stddev to know whether peak is above or below
+		#  whatever the cutoff is, given the recorded noise
+
+		if periodN >= CUTOFF:
+			if not KEEPGOING:
+				break
+
+		if peakheight > stddev * 2 or periodN >= CUTOFF:
+			# 95% chance peak is not noise
+
+			hz2 = (peakid + 1) * periodSamp * step
+			hz1 = (peakid - periodN + 1) * periodSamp * step
+
+			#print('Peaks {} - {}: nf={} sd={} height={} ratio={}'.format(peakid - periodN, peakid, noisefloor, stddev, peakheight, peakheight / stddev))
+			#print('{} Hz: {}'.format((hz1+hz2)/2, peakheight))
+			peakPeriods.append((hz1, hz2, periodArray))
+			periodSum += np.sum(periodArray, axis=0)
+			periodCount += periodN + 1
+			periodArray = np.array([])
+
+	if periodCount == 0:
+		return float('-inf')
+
+	periodSum /= periodCount
+	noisefloor = periodSum[[-2,-1,0,1,2]].mean()
+	strength = (periodSum - noisefloor).mean()
+
+	power = strength ** 2
+	dB = 10 * np.log10(power)
+
+	return dB
  
 
 class NoiseSource:
@@ -97,8 +179,10 @@ class NoiseSource:
     def process(self, fil, header, array):
 
         tuned_freq = (header.stop - header.start) / 2 + header.start
+	#print('tuned freq: {}'.format(tuned_freq))
 
-	dB = ExactPeakAverage(self.freq, array, header.step, fil.header[0]['sweep'].log_scale)
+	#dB = ExactPeakAverage(self.freq, array, header.step, fil.header[0]['sweep'].log_scale)
+	dB = AccumulateCurve(self.freq, array, header.step, fil.header[0]['sweep'].log_scale)
 
         sys.stdout.write('{} {} Hz {} dB {} MHz {}\n'.format(time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(header.time_start)), self.freq, dB, tuned_freq / 1000000, fil.header[1]))
 
