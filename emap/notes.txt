@@ -1,3 +1,19 @@
+Upsampling:
+  I imagine a construct which creates high-sample-rate, noisy information from low-sample-rate,
+  repeating information.  It plots the sample time for each sample on the expected time of the
+  repeated signal, to create a highly sampled signal.  The frequency of the leftover noise should
+  be incredibly high and hence easy to filter.
+  
+  This construct would need to connect with another construct which predicts the onset time of
+  each repeated signal.  The output of this construct should be usable to adjust this prediction,
+  and rerun the analysis -- possibly in a feedback loop, or possibly in some interrelationship
+  with other metrics.
+
+  How well this technique works will depend on the nature of the underlying sampling mechanism.
+  It may need to be tweaked to account for those details.  I think there was a brief thread
+  in the osmosdr mailing list regarding measuring the noisefloor that looks like it contains
+  important background material.  But the first step would be to just try the vanilla technique.
+
 Keylogging:
   While watching for the pixel clock signal in osmocom_fft,
   I noticed there is a signal during keypress.  75.67 MHz and 77.68 MHz
