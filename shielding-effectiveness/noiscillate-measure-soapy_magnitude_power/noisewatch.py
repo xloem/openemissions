@@ -16,9 +16,10 @@ without the enclosure in place.  Record the noise dB level.  Then place the gene
 positions, but with the enclosure surrounding one of them.  Record the new noise dB level, and compare to the old.
 ''')
 
-parser.add_argument('-i', '--file', default=[], type=argparse.FileType('rb'), nargs='*', help='soapy_power_bin files to monitor')
+parser.add_argument('-i', '--file', default=[], nargs='*', help='soapy_power_bin files to monitor')
 parser.add_argument('-d', '--dir', default=[], nargs='*', help='directories to watch for files')
 parser.add_argument('-f', '--freq', default=[40], nargs='*', help='toggle frequencies of noise sources to watch')
+parser.add_argument('-e', '--expire', default=60, help='Number of minutes without data after which to close a file (default 60)')
 
 args = parser.parse_args()
 
@@ -32,13 +33,9 @@ class WatchedDir:
         for entry in os.scandir(self.path):
             if entry.is_file and entry.path not in self.files:
                 try:
-                    f = open(entry.path, 'rb')
-                    try:
-                        wf = WatchedFile(f)
-                        self.files[entry.path] = wf
-                        ret.append(wf)
-                    except ValueError:
-                        f.close()
+                    wf = WatchedFile(entry.path)
+                    self.files[entry.path] = wf
+                    ret.append(wf)
                 except FileNotFoundError:
                     pass
         return ret
@@ -48,12 +45,17 @@ class WatchedFile:
     spbfmt = SoapyPowerBinFormat()
     minsecs = 60 * 60
 
-    def __init__(self, f):
-        self.file = f
+    def __init__(self, path):
+        self.file = open(path, 'rb')
         self.lastSize = os.stat(self.file.name).st_size
+        self.lastTime = os.stat(self.file.name).st_mtime
         self.header = WatchedFile.spbfmt.read_header(self.file)
         if self.header is None:
+            self.file.close()
             raise ValueError('invalid file format')
+
+    def __del__(self):
+        self.file.close()
 
     def grown(self):
         size = os.stat(self.file.name).st_size
@@ -63,12 +65,17 @@ class WatchedFile:
         else:
             return False
 
+    def expired(self):
+        global args
+        return (time.time() - self.lastTime) > args.expire * 60
+
     def spectra(self):
         results = []
         #pos = self.file.tell()
         #sys.stdout.write('@{}\n'.format(pos))
         result = WatchedFile.spbfmt.read(self.file)
         while result is not None:
+            self.lastTime = result[0].time_stop
             secs = result[0].time_stop - result[0].time_start
             if secs < WatchedFile.minsecs:
                 WatchedFile.minsecs = secs
@@ -76,6 +83,8 @@ class WatchedFile:
             #pos = self.file.tell()
             #sys.stdout.write('@{}\n'.format(pos))
             result = WatchedFile.spbfmt.read(self.file)
+
+        
         return np.array(results)
 
 def ExactPeakAverage(freq, array, step, log):
@@ -192,7 +201,7 @@ class NoiseSource:
 
 dirs = [WatchedDir(d) for d in args.dir]
 
-files = [WatchedFile(f) for f in args.file]
+files = set([WatchedFile(f) for f in args.file])
 for d in dirs:
     sys.stdout.write('Scanning {} ...\r'.format(d.path))
     files.extend(d.more())
@@ -203,6 +212,8 @@ for f in files:
     for spectrum in f.spectra():
         for source in sources:
             source.process(f, *spectrum)
+
+expiredfiles = []
 
 while True:
     growth = False
@@ -216,6 +227,12 @@ while True:
             for spectrum in f.spectra():
                 for source in sources:
                     source.process(f, *spectrum)
+        if f.expired():
+            expiredfiles.append(f)
+    for f in expiredfiles:
+        files.remove(f)
+        del f
+    expiredfiles = []
     now = time.time()
     if not growth and now < deadline:
         sys.stdout.write('sleeping until {} ... ...\r'.format(time.strftime('%H:%M:%S', time.gmtime(deadline))))
