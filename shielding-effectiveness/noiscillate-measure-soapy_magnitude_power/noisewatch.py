@@ -36,6 +36,8 @@ class WatchedDir:
                     wf = WatchedFile(entry.path)
                     self.files[entry.path] = wf
                     ret.append(wf)
+                except ValueError:
+                    pass
                 except FileNotFoundError:
                     pass
         return ret
@@ -55,7 +57,8 @@ class WatchedFile:
             raise ValueError('invalid file format')
 
     def __del__(self):
-        self.file.close()
+        if hasattr(self, 'file'):
+            self.file.close()
 
     def grown(self):
         size = os.stat(self.file.name).st_size
@@ -204,7 +207,8 @@ dirs = [WatchedDir(d) for d in args.dir]
 files = set([WatchedFile(f) for f in args.file])
 for d in dirs:
     sys.stdout.write('Scanning {} ...\r'.format(d.path))
-    files.extend(d.more())
+    for f in d.more():
+        files.add(f)
 
 sources = [NoiseSource(freq) for freq in args.freq]
 
@@ -220,7 +224,8 @@ while True:
     deadline = time.time() + WatchedFile.minsecs / 2
     for d in dirs:
         sys.stdout.write('Scanning {} ...\r'.format(d.path))
-        files.extend(d.more())
+        for f in d.more():
+            files.add(f)
     for f in files:
         if f.grown():
             growth = True
