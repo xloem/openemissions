@@ -1,10 +1,10 @@
-- [ ] close files after no updates after some expiration time.  this will allow archive scripts to move in
+- [X] close files after no updates after some expiration time.  this will allow archive scripts to move in
 
 - [X] add logging to the generator to compare timestamps precisely
   -> note the pi has no hwclock to maintain time across power cycles without the internet
 
-- [ ] separate out measurement function from noise source class, so that other measurement approaches can be swapped out
+- [X] separate out measurement function from noise source class, so that other measurement approaches can be swapped out
 - [ ] generate single site survey charts graphing noise power vs frequency
 - [ ] generate comparative site survey charts showing SE, attenuation etc
         -> note, this is similar to antenna measurements ... might want to check what rtl-sdr users are currently doing
-- [ ] measurement idea?: average a freq-wide window around the peaks to produce a common shape, then compare peak max to floor min
+- [X] measurement idea?: average a freq-wide window around the peaks to produce a common shape, then compare peak max to floor min
