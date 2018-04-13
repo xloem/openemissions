@@ -65,12 +65,16 @@ class WatchedFile:
 
     def spectra(self):
         results = []
+        #pos = self.file.tell()
+        #sys.stdout.write('@{}\n'.format(pos))
         result = WatchedFile.spbfmt.read(self.file)
         while result is not None:
             secs = result[0].time_stop - result[0].time_start
             if secs < WatchedFile.minsecs:
                 WatchedFile.minsecs = secs
             results.append(result)
+            #pos = self.file.tell()
+            #sys.stdout.write('@{}\n'.format(pos))
             result = WatchedFile.spbfmt.read(self.file)
         return np.array(results)
 
@@ -106,7 +110,7 @@ def AccumulateCurve(freq, data, step, log):
 	# convert to arithmetic domain
 	if log:
 		data = 10 ** (data / 10)
-	data = np.sqrt(data)
+	#data = np.sqrt(data)
 
 	numpeaks = int(len(data) / periodSamp - 0.5)
 
@@ -166,7 +170,7 @@ def AccumulateCurve(freq, data, step, log):
 	noisefloor = periodSum[[-2,-1,0,1,2]].mean()
 	strength = (periodSum - noisefloor).mean()
 
-	power = strength ** 2
+	power = strength #** 2
 	dB = 10 * np.log10(power)
 
 	return dB
@@ -179,10 +183,10 @@ class NoiseSource:
     def process(self, fil, header, array):
 
         tuned_freq = (header.stop - header.start) / 2 + header.start
-	#print('tuned freq: {}'.format(tuned_freq))
+        #print('tuned freq: {}'.format(tuned_freq))
 
-	#dB = ExactPeakAverage(self.freq, array, header.step, fil.header[0]['sweep'].log_scale)
-	dB = AccumulateCurve(self.freq, array, header.step, fil.header[0]['sweep'].log_scale)
+        #dB = ExactPeakAverage(self.freq, array, header.step, fil.header[0]['sweep'].log_scale)
+        dB = AccumulateCurve(self.freq, array, header.step, fil.header[0]['sweep'].log_scale)
 
         sys.stdout.write('{} {} Hz {} dB {} MHz {}\n'.format(time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(header.time_start)), self.freq, dB, tuned_freq / 1000000, fil.header[1]))
 
