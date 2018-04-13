@@ -1,3 +1,4 @@
+- [ ] output version and configuration info so that logs have a record to help interpret data
 - [ ] close files after no updates after some expiration time.  this will allow archive scripts to move in
 
 - [X] add logging to the generator to compare timestamps precisely
