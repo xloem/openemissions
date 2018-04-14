@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import argparse, os, sys, time
+import argparse, bisect, collections, os, sys, time
 
 import numpy as np
 
@@ -16,10 +16,16 @@ without the enclosure in place.  Record the noise dB level.  Then place the gene
 positions, but with the enclosure surrounding one of them.  Record the new noise dB level, and compare to the old.
 ''')
 
+try:
+    import shlex, subprocess
+    COLUMNS = int(subprocess.check_output(shlex.split('tput cols')))
+except:
+    COLUMNS = 80
+
 parser.add_argument('-i', '--file', default=[], nargs='*', help='soapy_power_bin files to monitor')
 parser.add_argument('-d', '--dir', default=[], nargs='*', help='directories to watch for files')
 parser.add_argument('-f', '--freq', default=[40], nargs='*', help='toggle frequencies of noise sources to watch')
-parser.add_argument('-e', '--expire', default=60, help='Number of minutes without data after which to close a file (default 60)')
+parser.add_argument('-e', '--expire', default=60, type=float, help='Number of minutes without data after which to close a file (default 60)')
 
 args = parser.parse_args()
 
@@ -56,7 +62,7 @@ class WatchedFile:
             self.file.close()
             raise ValueError('invalid file format')
 
-    def __del__(self):
+    def close(self):
         if hasattr(self, 'file'):
             self.file.close()
 
@@ -73,24 +79,26 @@ class WatchedFile:
         return (time.time() - self.lastTime) > args.expire * 60
 
     def spectra(self):
-        results = []
-        #pos = self.file.tell()
-        #sys.stdout.write('@{}\n'.format(pos))
-        result = WatchedFile.spbfmt.read(self.file)
+        pos = self.file.tell()
+        try:
+            result = WatchedFile.spbfmt.read(self.file)
+        except ValueError:
+            self.file.seek(pos)
+            result = None
         while result is not None:
             self.lastTime = result[0].time_stop
             secs = result[0].time_stop - result[0].time_start
             if secs < WatchedFile.minsecs:
                 WatchedFile.minsecs = secs
-            results.append(result)
-            #pos = self.file.tell()
-            #sys.stdout.write('@{}\n'.format(pos))
-            result = WatchedFile.spbfmt.read(self.file)
+            yield result
+            pos = self.file.tell()
+            try:
+                result = WatchedFile.spbfmt.read(self.file)
+            except ValueError:
+                self.file.seek(pos)
+                result = None
 
-        
-        return np.array(results)
-
-def ExactPeakAverage(freq, array, step, log):
+def AnalysisExactPeakAverage(freq, array, step, log):
     # DC is at center array, equal to half length
     dc = int(len(array) / 2)
 
@@ -105,7 +113,7 @@ def ExactPeakAverage(freq, array, step, log):
 
     return np.sum(harmonics) / num_harmonics
 
-def AccumulateCurve(freq, data, step, log):
+def AnalysisAccumulateCurve(freq, data, step, log):
 	periodSamp = freq / step
 	periodBoxExtent = int(periodSamp / 2)
 
@@ -186,21 +194,102 @@ def AccumulateCurve(freq, data, step, log):
 	dB = 10 * np.log10(power)
 
 	return dB
+
+def OutputEachSpectrum(header, freq, source, dB, fil):
+    sys.stdout.write('{} {} Hz {} dB {} MHz {}\n'.format(time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(header.time_start)), source.freq, dB, freq / 1000000, fil.header[1]))
+
+def OutputSummary(header, freq, source, dB, fil):
+    minv = float('inf')
+    maxv = -float('inf')
+    bins = list(source.bins)
+    nextidx = 0
+    col = 0
+    colsperbbin = 8
+    maxdepth = 0
+    while col <= COLUMNS - colsperbbin - 4:
+        vs = []
+        nextcol = col + colsperbbin
+        startidx = nextidx
+        nextidx = round(nextcol * len(bins) / COLUMNS)
+        minv = float('inf')
+        maxv = float('-inf')
+        maxextent = 0
+        mididx = (nextidx - startidx) / 2 + startidx
+        for bn in range(startidx, min(nextidx, len(bins))):
+            lminv = float('inf')
+            lmaxv = float('-inf')
+            if len(bins[bn]) > maxdepth:
+                maxdepth = len(bins[bn])
+            for sw in bins[bn].sweeps:
+                v = sw[0] + 100
+                vs.append(v)
+                if v < lminv:
+                    lminv = v
+                    if v < minv:
+                        minv = v
+                if v > lmaxv:
+                    lmaxv = v
+                    if v > maxv:
+                        maxv = v
+            if lmaxv - lminv > maxextent:
+                maxextent = lmaxv - lminv
+        if len(vs) > 0:
+            v = sum(vs)/len(vs)
+            #if minv == maxv:
+            #    out = ' {:.0f}'.format(minv)
+            #else:
+            #    out = ' {:.0f}-{:.0f}'.format(minv,maxv)
+            out = ' {:.0f}/{:f}'.format(v,maxextent)
+            colsperbbin = len(out)
+            sys.stdout.write(out)
+        else:
+            sys.stdout.write(' ' * colsperbbin)
+            colsperbbin = 4
+        col = nextcol
+    if maxdepth > 1:
+        sys.stdout.write('//{}\n'.format(maxdepth))
+    else:
+        sys.stdout.write('//{}\n'.format(len(bins)))
+
+
  
 
 class NoiseSource:
+
+    class ResultBin:
+        def __init__(self, freq):
+            self.freq = freq
+            self.sweeps = collections.deque()
+        def add(self, dB, header):
+            self.sweeps.append((dB, header))
+        def remove(self):
+            self.sweeps.popleft()
+        def __len__(self):
+            return len(self.sweeps)
+        def __lt__(self, other):
+            return self.freq < other.freq
+    
     def __init__(self, freq):
         self.freq = float(freq)
+        self.bins = []
 
     def process(self, fil, header, array):
+        #dB = AnalysisExactPeakAverage(self.freq, array, header.step, fil.header[0]['sweep'].log_scale)
+        dB = AnalysisAccumulateCurve(self.freq, array, header.step, fil.header[0]['sweep'].log_scale)
 
         tuned_freq = (header.stop - header.start) / 2 + header.start
-        #print('tuned freq: {}'.format(tuned_freq))
 
-        #dB = ExactPeakAverage(self.freq, array, header.step, fil.header[0]['sweep'].log_scale)
-        dB = AccumulateCurve(self.freq, array, header.step, fil.header[0]['sweep'].log_scale)
+        bn = self.ResultBin(tuned_freq)
+        idx = bisect.bisect(self.bins, bn) - 1
+        if idx >= 0 and self.bins[idx].freq == bn.freq:
+            bn = self.bins[idx]
+        else:
+            self.bins.insert(idx, bn)
+        bn.add(dB, header)
 
-        sys.stdout.write('{} {} Hz {} dB {} MHz {}\n'.format(time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(header.time_start)), self.freq, dB, tuned_freq / 1000000, fil.header[1]))
+        #OutputEachSpectrum(header, tuned_freq, self, dB, fil)
+        OutputSummary(header, tuned_freq, self, dB, fil)
+
 
 dirs = [WatchedDir(d) for d in args.dir]
 
@@ -210,14 +299,20 @@ for d in dirs:
     for f in d.more():
         files.add(f)
 
+for file in list(files):
+    if file.expired():
+        file.close()
+        files.remove(file)
+
 sources = [NoiseSource(freq) for freq in args.freq]
 
+expiredfiles = []
+
 for f in files:
+    sys.stdout.write('Running through backlog in {} ...\r'.format(f.file.name))
     for spectrum in f.spectra():
         for source in sources:
             source.process(f, *spectrum)
-
-expiredfiles = []
 
 while True:
     growth = False
@@ -232,11 +327,14 @@ while True:
             for spectrum in f.spectra():
                 for source in sources:
                     source.process(f, *spectrum)
-        if f.expired():
+        elif f.expired():
+            sys.stdout.write('{} has expired\n'.format(f.file.name))
+            f.close()
             expiredfiles.append(f)
     for f in expiredfiles:
         files.remove(f)
         del f
+    del expiredfiles
     expiredfiles = []
     now = time.time()
     if not growth and now < deadline:

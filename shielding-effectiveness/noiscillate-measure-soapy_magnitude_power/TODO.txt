@@ -1,3 +1,4 @@
+- [X] fix bug where corruption is read while reading during writing
 - [ ] output version and configuration info so that logs have a record to help interpret data
 - [X] close files after no updates after some expiration time.  this will allow archive scripts to move in
 
