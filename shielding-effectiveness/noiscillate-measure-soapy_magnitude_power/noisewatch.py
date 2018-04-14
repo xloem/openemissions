@@ -78,25 +78,33 @@ class WatchedFile:
         global args
         return (time.time() - self.lastTime) > args.expire * 60
 
-    def spectra(self):
+    def _1spectrum(self):
         pos = self.file.tell()
-        try:
-            result = WatchedFile.spbfmt.read(self.file)
-        except ValueError:
+	try:
+	        result = WatchedFile.spbfmt.read(self.file)
+	except ValueError:
+		result = None
+        if result is not None:
+            if result[0].size == 0 or len(result[1])*4 < result[0].size:
+                # short read
+		sys.stderr.write('Header says {} bytes expected; {} were read.\n'.format(result[0].size, len(result[1])*4))
+		sys.stderr.write('Short read; possible race condition with other process\n')
+                result = None
+
+        if result is None:
             self.file.seek(pos)
-            result = None
+
+	return result
+
+    def spectra(self):
+        result = self._1spectrum()
         while result is not None:
             self.lastTime = result[0].time_stop
             secs = result[0].time_stop - result[0].time_start
             if secs < WatchedFile.minsecs:
                 WatchedFile.minsecs = secs
             yield result
-            pos = self.file.tell()
-            try:
-                result = WatchedFile.spbfmt.read(self.file)
-            except ValueError:
-                self.file.seek(pos)
-                result = None
+            result = self._1spectrum()
 
 def AnalysisExactPeakAverage(freq, array, step, log):
     # DC is at center array, equal to half length
