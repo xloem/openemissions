@@ -280,9 +280,9 @@ class NoiseSource:
         tuned_freq = (header.stop - header.start) / 2 + header.start
 
         bn = self.ResultBin(tuned_freq)
-        idx = bisect.bisect(self.bins, bn) - 1
-        if idx >= 0 and self.bins[idx].freq == bn.freq:
-            bn = self.bins[idx]
+        idx = bisect.bisect(self.bins, bn)
+        if idx > 0 and self.bins[idx-1].freq == bn.freq:
+            bn = self.bins[idx-1]
         else:
             self.bins.insert(idx, bn)
         bn.add(dB, header)
