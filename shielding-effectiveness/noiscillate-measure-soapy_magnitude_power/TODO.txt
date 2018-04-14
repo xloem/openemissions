@@ -1,3 +1,5 @@
+- [ ] determine stability of read power magnitude
+  find why it is unstable; can stability be predicted?
 - [X] fix bug where corruption is read while reading during writing
 - [ ] fix bug where file updates are no longer noticed.  maybe this happens after the corruption fix? but stat should notice size changes!
 - [ ] output version and configuration info so that logs have a record to help interpret data
