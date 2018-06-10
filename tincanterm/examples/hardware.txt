@@ -1,0 +1,17 @@
+Avago SFH250V / SP000063852
+  A fiberoptic photodiode receiver that is designed to connect well to raw 0.98 - 2.2 mm fiber and responds to visible light (~500nm - ~1000nm)
+  Viewed from above, +V should be connected to the rear right lead.  A large resistor connects the rear left lead to GND.
+  The front leads are for mounting only.  The rear left lead is read for the signal.
+  The resistor/input setup may be moved to the other lead to invert the signal.
+  Using a 5V supply, I got a good signal to my arduino uno using a 100k Ohm resistor.
+    (emitter was SFH757V, 670 nm, 5V, 100 Ohm)
+
+Avago SFH757V / SP000063858
+  A fiberoptic LED transmitter that is designed to connect well to raw 0.98 - 2.2 mm fiber and uses visible light at 670 nm.
+  Forward current: 50 mA
+  Forward voltage: 2.1 V (<= 2.8 V)
+  Series resistor is small:
+    58 Ohm or more (>44 Ohm) for 5V supply
+    18 Ohm or more (>4 Ohm) for 3V supply
+  Viewed from above, +V is the rear lead on the left, GND is the rear lead on the right.  The front leads are for mounting only.
+
