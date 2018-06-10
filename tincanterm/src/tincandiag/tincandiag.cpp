@@ -21,7 +21,8 @@ bool rand() {
 
 int main()
 {
-  implInit();
+  implRemoteInit();
+  implLocalInit();
   implRemoteSend(false);
 
   bool oldstate = false;
@@ -153,6 +154,7 @@ int main()
     }
   }
 
-  implDestroy();
+  implRemoteDestroy();
+  implLocalDestroy();
   return 0;
 }

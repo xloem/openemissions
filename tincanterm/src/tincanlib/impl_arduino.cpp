@@ -15,13 +15,16 @@
 #define DOWN INPUT
 #define UP INPUT_PULLUP
 
-void implInit()
+void implRemoteInit()
 {
-  Serial.begin(LOCAL_BAUD);
-
   pinMode(INPUT_PORT, INPUT_PULL);
 
   pinMode(OUTPUT_PORT, OUTPUT);
+}
+
+void implLocalInit()
+{
+  Serial.begin(LOCAL_BAUD);
 }
 
 unsigned long implMillis()
@@ -68,7 +71,11 @@ char implLocalRecv()
   return Serial.read();
 }
 
-void implDestroy()
+void implRemoteDestroy()
+{
+}
+
+void implLocalDestroy()
 {
 }
 

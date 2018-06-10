@@ -4,8 +4,11 @@
 
 #include <stdbool.h>
 
-// Initialize the implementation
-void implInit();
+// Initialize the remote communication implementation
+void implRemoteInit();
+
+// Initialize the local communication implementation
+void implLocalInit();
 
 // Get a timestamp
 unsigned long implMillis();
@@ -25,5 +28,8 @@ bool implLocalAvail();
 // Read a character locally
 char implLocalRecv();
 
-// Shut down the implementation
-void implDestroy();
+// Shut down the remote communication implementation
+void implRemoteDestroy();
+
+// Shut down the local communication implementation
+void implLocalDestroy();

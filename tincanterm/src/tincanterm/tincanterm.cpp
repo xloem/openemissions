@@ -28,7 +28,8 @@ int main()
   recvState.active = false;
   sendState.active = false;
 
-  implInit();
+  implRemoteInit();
+  implLocalInit();
 
   // Begin in resting state
   debug("-> ");
@@ -161,6 +162,7 @@ int main()
     }
   }
 
-  implDestroy();
+  implRemoteDestroy();
+  implLocalDestroy();
   return 0;
 }
