@@ -45,11 +45,11 @@ void implLocalInit()
   };
 }
 
-unsigned long implMillis()
+unsigned long implMicros()
 {
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC, &ts);
-  return ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+  return ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
 }
 
 void implLocalSend(char character)

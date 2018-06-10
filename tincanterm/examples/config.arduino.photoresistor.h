@@ -43,11 +43,11 @@
 // Character to use for linebreak
 #define LINEBREAK '\n'
 
-// milliseconds to spend sending each bit (inverse baud in ms)
-#define BIT_MS 29
+// microseconds to spend sending each bit (inverse baud in us)
+#define BIT_US 29000
 
 // delay to make sure bit value has settled when reading
-#define SETTLE_MS 13
+#define SETTLE_US 13000
 
 // pull resistor direction for input port
 #define INPUT_PULL  DOWN

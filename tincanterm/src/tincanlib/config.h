@@ -23,7 +23,7 @@
 
 
 // which implementation to use
-#define IMPL        PIGPIO
+#define IMPL        PIGPIOD
 
 // identifier for input port
 #define INPUT_PORT  4
@@ -40,11 +40,11 @@
 // Character to use for linebreak
 #define LINEBREAK '\n'
 
-// milliseconds to spend sending each bit (inverse baud in ms)
-#define BIT_MS 4
+// microseconds to spend sending each bit (inverse baud in us)
+#define BIT_US 4000
 
 // delay to make sure bit value has settled when reading
-#define SETTLE_MS 2
+#define SETTLE_US 2000
 
 // pull resistor direction for input port
 #define INPUT_PULL  OFF

@@ -30,8 +30,8 @@ int main()
   double waitMin = 1;
   double settleMin = 1;
 
-  unsigned long msStart, msNow;
-  double msDelay;
+  unsigned long usStart, usNow;
+  double usDelay;
 
   print("Beginning diagnostics.");
 
@@ -51,20 +51,20 @@ int main()
 
     print("\r\n");
 
-    long msTotalComparator = implMillis();
+    unsigned long usTotalComparator = implMicros();
     
-    while (implMillis() - msTotalComparator < 5000)
+    while (implMicros() - usTotalComparator < 5000000)
     {
       // output summary
       print("\r___ ");
       print(long(count));
-      print(" runs, low ms range = ");
+      print(" runs, low us range = ");
       print(long(toLowMin));
       print(" - ");
       print(long(toLowSum / count + 0.5));
       print(" - ");
       print(long(toLowMax));
-      print(" high ms range = ");
+      print(" high us range = ");
       print(long(toHighMin));
       print(" - ");
       print(long(toHighSum / count + 0.5));
@@ -72,7 +72,7 @@ int main()
       print(long(toHighMax));
       print(", apparent bias towards ");
       print(toHighSum > toLowSum ? "LOW" : "HIGH");
-      print(", min bit ms = ");
+      print(", min bit us = ");
       if (toHighMax > waitMin) waitMin = toHighMax;
       if (toLowMax > waitMin) waitMin = toLowMax;
       long lowSettle = toLowMax - toLowMin;
@@ -81,38 +81,38 @@ int main()
       if (lowSettle > settleMin) settleMin = lowSettle;
       if (highSettle > settleMin) settleMin = highSettle;
       print(long(toHighMax > toLowMax ? toHighMax : toLowMax) + currentSettleMin + 1);
-      print(", min settle ms = ");
+      print(", min settle us = ");
       print(currentSettleMin + 1);
       print("    ");
 
   
       // old state ends
-      msStart = implMillis();
+      usStart = implMicros();
   
       bool newstate = rand();
       implRemoteSend(newstate);
 
       // wait for new state to settle
-      msNow = msStart;
-      msDelay = implMillis() - msStart;
+      usNow = usStart;
+      usDelay = implMicros() - usStart;
       highCount = 0;
       lowCount = 0;
   
-      while (msStart + waitMin > msNow) {
-        msNow = implMillis();
+      while (usStart + waitMin > usNow) {
+        usNow = implMicros();
         if (implRemoteRecv() != newstate) {
           print("\r_0_");
           if (newstate)
             ++ lowCount;
           else
             ++ highCount;
-          msDelay = msNow - msStart;
-          if (msDelay >= waitMin)
-            waitMin = msDelay + 1;
-          if (msDelay > 100) {
+          usDelay = usNow - usStart;
+          if (usDelay >= waitMin)
+            waitMin = usDelay + 1;
+          if (usDelay > 100000) {
             print(" ==== State not settled after ");
-            print(long(msDelay));
-            print(" ms (");
+            print(long(usDelay));
+            print(" us (");
             print(lowCount);
             print(" low, ");
             print(highCount);
@@ -133,17 +133,17 @@ int main()
       }
   
       if (newstate) {
-        toHighSum += msDelay;
-        if (msDelay > toHighMax)
-          toHighMax = msDelay;
-        if (oldstate != newstate && msDelay < toHighMin)
-          toHighMin = msDelay;
+        toHighSum += usDelay;
+        if (usDelay > toHighMax)
+          toHighMax = usDelay;
+        if (oldstate != newstate && usDelay < toHighMin)
+          toHighMin = usDelay;
       } else {
-        toLowSum += msDelay;
-        if (msDelay > toLowMax)
-          toLowMax = msDelay;
-        if (oldstate != newstate && msDelay < toLowMin)
-          toLowMin = msDelay;
+        toLowSum += usDelay;
+        if (usDelay > toLowMax)
+          toLowMax = usDelay;
+        if (oldstate != newstate && usDelay < toLowMin)
+          toLowMin = usDelay;
       }
 
       // update count

@@ -11,7 +11,7 @@ void implRemoteInit();
 void implLocalInit();
 
 // Get a timestamp
-unsigned long implMillis();
+unsigned long implMicros();
 
 // Set the output port high or low
 void implRemoteSend(bool trueOrFalse);

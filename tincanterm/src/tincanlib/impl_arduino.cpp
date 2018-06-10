@@ -27,9 +27,9 @@ void implLocalInit()
   Serial.begin(LOCAL_BAUD);
 }
 
-unsigned long implMillis()
+unsigned long implMicros()
 {
-  return millis();
+  return micros();
 }
 
 void implRemoteSend(bool trueOrFalse)

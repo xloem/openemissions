@@ -61,7 +61,7 @@ int main()
 
         sendState.active = true;
         sendState.wire = asciiToWire(character);
-        sendState.start = implMillis() + BIT_MS;
+        sendState.start = implMicros() + BIT_US;
         implRemoteSend(true);
         sendState.bit = 0;
         debug("-> encoding as ");
@@ -70,7 +70,7 @@ int main()
 
       }
 
-    } else if (implMillis() >= sendState.start) {
+    } else if (implMicros() >= sendState.start) {
       // we're sending and it's time to send the next bit
 
       // an extra bit is sent to return to the resting state
@@ -93,7 +93,7 @@ int main()
           debug(LINEBREAK);
   
         // Update state
-        sendState.start += BIT_MS;
+        sendState.start += BIT_US;
         sendState.bit += 1;
       }
     }
@@ -112,14 +112,14 @@ int main()
         // Start receiving character
         recvState.active = true;
         recvState.wire = 0;
-        recvState.start = implMillis() + SETTLE_MS + BIT_MS;
+        recvState.start = implMicros() + SETTLE_US + BIT_US;
         recvState.bit = 0;
 
       } else {
         debug(implRemoteRecv() ? "(1)" : "(0)");
       }
 
-    } else if (implMillis() >= recvState.start) {
+    } else if (implMicros() >= recvState.start) {
       // we're receiving and it's time to read the next bit
 
       if (recvState.bit >= WIRE_BITS) {
@@ -154,7 +154,7 @@ int main()
           recvState.wire = recvState.wire | (1 << recvState.bit);
   
         // Update state
-        recvState.start += BIT_MS;
+        recvState.start += BIT_US;
         recvState.bit += 1;
       }
     } else {
