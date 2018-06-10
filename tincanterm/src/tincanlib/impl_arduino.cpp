@@ -31,6 +31,10 @@ unsigned long implMillis()
 
 void implRemoteSend(bool trueOrFalse)
 {
+  #if OUTPUT_INVERT
+  trueOrFalse = !trueOrFalse;
+  #endif
+
   digitalWrite(OUTPUT_PORT, trueOrFalse ? HIGH : LOW);
 }
 
@@ -42,7 +46,11 @@ bool implRemoteRecv()
   pinMode(INPUT_PORT, INPUT_PULL);
   #endif
 
+  #if INPUT_INVERT
+  return digitalRead(INPUT_PORT) == LOW;
+  #else
   return digitalRead(INPUT_PORT) == HIGH;
+  #endif
 }
 
 void implLocalSend(char character)

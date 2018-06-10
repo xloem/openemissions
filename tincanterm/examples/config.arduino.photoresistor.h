@@ -31,8 +31,14 @@
 // identifier for input port
 #define INPUT_PORT  4
 
+// whether to invert the input logic
+#define INPUT_INVERT false
+
 // identifier for output port
 #define OUTPUT_PORT 5
+
+// whether to invert the output logic
+#define OUTPUT_INVERT false
 
 // Character to use for linebreak
 #define LINEBREAK '\n'

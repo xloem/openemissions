@@ -9,7 +9,7 @@
  * A length of cable is optionally surrounded in heat shrink tubing or any other opaque material.
  * One end is connected to the SFH757V and the other to the SFH250V.
  *
- * The light is emitted when the signal is low, because I have heard that microcontroller pins are better at sinking current than sourcing it.
+ * The logic is inverted, because I have heard that microcontroller pins are better at sinking current than sourcing it.
  *
  * Receiver SFH250V wiring:
  *    Back left leg connects to GROUND
@@ -28,8 +28,14 @@
 // identifier for input port
 #define INPUT_PORT  4
 
+// whether to invert the input logic
+#define INPUT_INVERT true
+
 // identifier for output port
 #define OUTPUT_PORT 5
+
+// whether to invert the output logic
+#define OUTPUT_INVERT true
 
 // Character to use for linebreak
 #define LINEBREAK '\n'
