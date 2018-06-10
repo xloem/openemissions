@@ -1,59 +1,85 @@
 // Communication implementation for direct GPIO on the Raspberry PI
 
-
-// UNWORKING
-// TODO: update to match impl_pigpiod.c
-
 #include "impl.h"
-
-#include <stdlib.h>
 
 #define PIGPIO 11
 #if IMPL == PIGPIO
+
+#include <stdio.h>
+#include <stdlib.h>
 
 #define _pigpio_input_pull(pull) PI_PUD_##pull
 #define pigpio_input_pull(pull) _pigpio_input_pull(pull)
 
 #include <pigpio.h>
+// for pigpio_error
+#include <pigpiod_if2.h>
 
-void implInit()
+static int check(int e)
 {
-	if (gpioInitialise() == PI_INIT_FAILED)
-		exit(1);
-
-	if (gpioSetMode(INPUT_PORT, PI_OUTPUT) != 0)
-		exit(2);
-
-	if (gpioSetMode(INPUT_PORT, PI_INPUT) != 0)
-		exit(2);
-
-	if (gpioSetPullUpDown(INPUT_PORT, pigpio_input_pull(INPUT_PULL)) != 0)
-		exit(3);
-
-	if (gpioSetMode(OUTPUT_PORT, PI_OUTPUT) != 0)
-		exit(4);
-
-	if (gpioWrite(OUTPUT_PORT, 1) != 0)
-		exit(5);
-
-	if (gpioWrite(OUTPUT_PORT, 0) != 0)
-		exit(5);
-	
+	if (e < 0) {
+		fprintf(stderr, "pigpioerror: %s\n", pigpio_error(e));
+		exit(e);
+	}
+	return e;
 }
 
-void implSend(bool trueOrFalse)
+void implRemoteInit()
 {
+  int r;
+
+  // pigpio
+	r = gpioInitialise();
+  check(r);
+
+  // input port
+  #if INPUT_DRAIN
+	r = gpioSetMode(INPUT_PORT, PI_OUTPUT);
+  check(r);
+  #endif
+
+	r = gpioSetMode(INPUT_PORT, PI_INPUT);
+  check(r);
+
+	r = gpioSetPullUpDown(INPUT_PORT, pigpio_input_pull(INPUT_PULL));
+	check(r);
+
+  r = gpioRead(INPUT_PORT);
+  check(r);
+
+  // output port
+	r = gpioSetMode(OUTPUT_PORT, PI_OUTPUT);
+  check(r);
+
+	r = gpioWrite(OUTPUT_PORT, 1);
+  check(r);
+}
+
+void implRemoteSend(bool trueOrFalse)
+{
+  #if OUTPUT_INVERT
+  trueOrFalse = !trueOrFalse;
+  #endif
+
 	gpioWrite(OUTPUT_PORT, trueOrFalse ? 1 : 0);
 }
 
-bool implRead()
+bool implRemoteRecv()
 {
+  #if INPUT_DRAIN
 	gpioSetMode(INPUT_PORT, PI_OUTPUT);
-	gpioSetMode(INPUT_PORT, PI_INPUT);
+  gpioWrite(INPUT_PORT, 0);
+  gpioSetMode(INPUT_PORT, PI_INPUT);
+  #endif
+
+  #if INPUT_INVERT
+  return ! gpioRead(INPUT_PORT);
+  #else
 	return gpioRead(INPUT_PORT);
+  #endif
 }
 
-void implDestroy()
+void implRemoteDestroy()
 {
 	gpioTerminate();
 }

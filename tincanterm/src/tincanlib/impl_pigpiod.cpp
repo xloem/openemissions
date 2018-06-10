@@ -24,19 +24,15 @@ static int check(int e)
 	return e;
 }
 
-static void init()
-{
-	pi = pigpio_start(0, 0);
-	check(pi);
-}
-
-
-void implInitInput()
+void implRemoteInit()
 {
   int r;
 
-  init();
+  // pigpiod
+	pi = pigpio_start(0, 0);
+	check(pi);
 
+  // input port
 	#if INPUT_DRAIN
 	r = set_mode(pi, INPUT_PORT, PI_OUTPUT);
 	check(r);
@@ -50,14 +46,8 @@ void implInitInput()
 
 	r = gpio_read(pi, INPUT_PORT);
 	check(r);
-}
 
-void implInitOutput()
-{
-	int r;
-
-  init();
-
+  // output port
 	r = set_mode(pi, OUTPUT_PORT, PI_OUTPUT);
 	check(r);
 
@@ -65,22 +55,31 @@ void implInitOutput()
 	check(r);
 }
 
-void implSend(bool trueOrFalse)
+void implRemoteSend(bool trueOrFalse)
 {
+  #if OUTPUT_INVERT
+  trueOrFalse = !trueOrFalse;
+  #endif
+
 	gpio_write(pi, OUTPUT_PORT, trueOrFalse ? 1 : 0);
 }
 
-bool implRead()
+bool implRemoteRecv()
 {
 	#if INPUT_DRAIN
 	set_mode(pi, INPUT_PORT, PI_OUTPUT);
   gpio_write(pi, INPUT_PORT, 0);
 	set_mode(pi, INPUT_PORT, PI_INPUT);
   #endif
+
+  #if INPUT_INVERT
+  return ! gpio_read(pi, INPUT_PORT);
+  #else
 	return gpio_read(pi, INPUT_PORT);
+  #endif
 }
 
-void implDestroy()
+void implRemoteDestroy()
 {
 	pigpio_stop(pi);
 	pi = 0;
