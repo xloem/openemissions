@@ -14,7 +14,7 @@
  * Receiver SFH250V wiring:
  *    Back left leg connects to GROUND
  *    Back right leg connects to ARDUINO PIN 4
- *    Back right leg additionally connects to a 100k Ohm resistor, which connects to +5V
+ *    Back right leg additionally connects to a 10M Ohm resistor, which connects to +5V
  *
  * Transmitter SFH757V wiring:
  *    Back left leg connects to +5V
@@ -41,10 +41,10 @@
 #define LINEBREAK '\n'
 
 // milliseconds to spend sending each bit (inverse baud in ms)
-#define BIT_MS 5
+#define BIT_MS 4
 
 // delay to make sure bit value has settled when reading
-#define SETTLE_MS 3
+#define SETTLE_MS 2
 
 // pull resistor direction for input port
 #define INPUT_PULL  DOWN

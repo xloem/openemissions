@@ -41,10 +41,10 @@
 #define LINEBREAK '\n'
 
 // milliseconds to spend sending each bit (inverse baud in ms)
-#define BIT_MS 5
+#define BIT_MS 4
 
 // delay to make sure bit value has settled when reading
-#define SETTLE_MS 3
+#define SETTLE_MS 2
 
 // pull resistor direction for input port
 #define INPUT_PULL  DOWN

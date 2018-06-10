@@ -3,7 +3,7 @@ Avago SFH250V / SP000063852
   Viewed from above, +V should be connected to the rear right lead.  A large resistor connects the rear left lead to GND.
   The front leads are for mounting only.  The rear left lead is read for the signal.
   The resistor/input setup may be moved to the other lead to invert the signal.
-  Using a 5V supply, I got a good signal to my arduino uno using a 100k Ohm resistor.
+  Using a 5V supply, I got a good signal to my arduino uno using a 100k Ohm resistor, even better with 10M Ohm.
     (emitter was SFH757V, 670 nm, 5V, 100 Ohm)
 
 Avago SFH757V / SP000063858
