@@ -13,12 +13,12 @@
  *
  * Receiver SFH250V wiring:
  *    Back left leg connects to GROUND
- *    Back right leg connects to ARDUINO PIN 4
+ *    Back right leg connects to ARDUINO PIN 3
  *    Back right leg additionally connects to a 10M Ohm resistor, which connects to +5V
  *
  * Transmitter SFH757V wiring:
  *    Back left leg connects to +5V
- *    Back right leg connects to a 100 Ohm resistor, which connects to ARDUINO PIN 5
+ *    Back right leg connects to a 100 Ohm resistor, which connects to ARDUINO PIN 4
  */
 
 
@@ -26,13 +26,13 @@
 #define IMPL        ARDUINO
 
 // identifier for input port
-#define INPUT_PORT  4
+#define INPUT_PORT  3
 
 // whether to invert the input logic
 #define INPUT_INVERT true
 
 // identifier for output port
-#define OUTPUT_PORT 5
+#define OUTPUT_PORT 4
 
 // whether to invert the output logic
 #define OUTPUT_INVERT true
@@ -48,10 +48,6 @@
 
 // pull resistor direction for input port
 #define INPUT_PULL  DOWN
-
-// set to nonzero if input should be set output-low before reading
-// this drains stored charge
-#define INPUT_DRAIN 0
 
 // baud rate for local communications, if applicable
 // note that if the device has no flow control the buffer will quickly fill, causing data loss unless rate is limited elsewhere

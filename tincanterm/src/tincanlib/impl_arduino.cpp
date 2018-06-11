@@ -15,11 +15,18 @@
 #define DOWN INPUT
 #define UP INPUT_PULLUP
 
+#define NOTHING_RECVD 0
+static volatile unsigned long recvMicros = NOTHING_RECVD;
+static volatile bool recvValue;
+static implRemoteHandler recvHandler;
+
 void implRemoteInit()
 {
   pinMode(INPUT_PORT, INPUT_PULL);
 
   pinMode(OUTPUT_PORT, OUTPUT);
+
+  recvHandler = 0;
 }
 
 void implLocalInit()
@@ -27,48 +34,110 @@ void implLocalInit()
   Serial.begin(LOCAL_BAUD);
 }
 
-unsigned long implMicros()
+static void queueRecvHandler()
 {
-  return micros();
+  recvMicros = micros();
+  #if INPUT_INVERT
+    recvValue = ! digitalRead(INPUT_PORT);
+  #else
+    recvValue = digitalRead(INPUT_PORT);
+  #endif
 }
 
-void implRemoteSend(bool trueOrFalse)
+void implRemoteHandle(implRemoteHandler handler)
 {
+  noInterrupts();
+
+  recvHandler = handler;
+
+  attachInterrupt(digitalPinToInterrupt(INPUT_PORT), queueRecvHandler, CHANGE);
+
+  interrupts();
+}
+
+static void poll()
+{
+  if (recvMicros != NOTHING_RECVD) {
+    noInterrupts();
+    unsigned long micros = recvMicros;
+    recvMicros = NOTHING_RECVD;
+    interrupts();
+
+    recvHandler(recvValue, micros);
+
+  }
+}
+
+unsigned long implRemoteSend(bool trueOrFalse)
+{
+  unsigned long ret;
+
+  poll();
+
+  noInterrupts();
+
   #if OUTPUT_INVERT
   trueOrFalse = !trueOrFalse;
   #endif
 
+  ret = micros();
+
   digitalWrite(OUTPUT_PORT, trueOrFalse ? HIGH : LOW);
+
+  interrupts();
+
+  poll();
+
+  return ret;
 }
 
-bool implRemoteRecv()
+void implRemoteSchedule(bool trueOrFalse, unsigned long time)
 {
-  #if INPUT_DRAIN
-  pinMode(INPUT_PORT, OUTPUT);
-  digitalWrite(INPUT_PORT, LOW);
-  pinMode(INPUT_PORT, INPUT_PULL);
+  poll();
+
+  noInterrupts();
+
+  #if OUTPUT_INVERT
+  trueOrFalse = !trueOrFalse;
   #endif
 
-  #if INPUT_INVERT
-  return digitalRead(INPUT_PORT) == LOW;
+  unsigned long us = time - micros();
+  #if AVR
+    unsigned long cycles = (F_CPU / 1000000) * us;
+    _delay_loop_2(cycles / 4);
   #else
-  return digitalRead(INPUT_PORT) == HIGH;
+    delayMicroseconds(us);
   #endif
+  
+  digitalWrite(OUTPUT_PORT, trueOrFalse ? HIGH : LOW);
+
+  interrupts();
+
+  poll();
 }
 
 void implLocalSend(char character)
 {
-  Serial.write(character);
-}
+  //poll();
 
-bool implLocalAvail()
-{
-  return Serial.available() > 0;
+  Serial.write(character);
+
+  //poll();
 }
 
 char implLocalRecv()
 {
-  return Serial.read();
+  char character;
+
+  do {
+    poll();
+
+    character = Serial.read();
+  } while (character == -1);
+
+  poll();
+
+  return character;
 }
 
 void implRemoteDestroy()

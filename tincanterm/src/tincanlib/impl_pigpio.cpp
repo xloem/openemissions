@@ -1,5 +1,7 @@
 // Communication implementation for direct GPIO on the Raspberry PI
 
+// TODO: NONFUNCTION UPDATE FOR NEW INTERFACE
+
 #include "impl.h"
 
 #define PIGPIO 11

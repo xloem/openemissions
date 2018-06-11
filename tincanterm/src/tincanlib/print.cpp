@@ -20,11 +20,17 @@ void print(long number)
   if (number < 0) {
     print('-');
     number = -number;
+  } else if (number == 0) {
+    print('0');
+    return;
   }
 
-  if (number >= 10000) print(char('0' + ((number / 10000) % 10)));
-  if (number >= 1000) print(char('0' + ((number / 1000) % 10)));
-  if (number >= 100) print(char('0' + ((number / 100) % 10)));
-  if (number >= 10) print(char('0' + ((number / 10) % 10)));
-  print(char('0' + (number % 10)));
+  long place = 1000000000L;
+  while (number < place) place /= 10;
+  while (place) {
+    int digit = number / place;
+    print(char('0' + digit));
+    number -= digit * place;
+    place /= 10;
+  }
 }

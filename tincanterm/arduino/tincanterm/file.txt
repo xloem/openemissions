@@ -1,0 +1,82 @@
+The latching of this signal seems funny.
+Current algorithm is to listen for changes, and ignore changes that are too early completely.  Once a change occurs that is late enough, the
+entire previous area was assumed to be the first value.
+THAT MIGHT BE IT !!!!!! ?
+If the change happens a little early, then it will be completely ignored.  This is the opposite of waiting for settle time !
+----
+I looked for the resistance of the photoconductor in darkness; but instead they list the photocurrent (in darkness and as a function of light with a 50 ohm resistor).
+- thing I forgot? establishing note-taking habit in the hopes this can be avoided in the future
+can make two more apps for desktopserver and desktopclient; but I'd like to make it general, so maybe make an option to have one stream be
+binary or something
+----
+
+Increasing the bitrate.
+
+We want simplicity and uniformity, and to use low-level 3rd-party functions that don't abstract things away enough to
+easily transmit extra information if they are compromised or closed-source.
+
+Both the pi and the arduino allow interrupts / callbacks when a pin is changed.
+The pi allows waveforms to be queued.
+The arduino just has bit-banging and the serial module.
+I think my protocol may be serial 7-N-1 .
+I guess using SoftwareSerial on the arduino would kind of meet the goal.  It's a big abstraction, but the whole device is a software bundle
+anyway, so the attack surface seems similar.  It's harder to verify that it's correct, but it may be worth it.
+
+First I'll want to do precise timings on the input.
+
+SoftwareSerial uses _delay_loop_2, an avr function that performs a precise busywait.  To get the timings right, it trusts this function
+and disables interrupts during both send and receive.  Receive is handled by an interrupt.
+This means that nothing can be sent while a byte is being received, and a byte may be lost if it is poorly timed while one is sent.  With high
+bitrates this may not matter.
+
+The implementation then is to have a callback on receive, and busywait to send.  It's an idea.  I don't think it makes too much sense to use
+SoftwareSerial itself at this time; the crucial bit seems to be that implementation detail.
+
+Alternatively I could drop the hardware concern and use serial hardware, which could be very fast, although I might need to tune the receiver
+to not flutter for 200 us after a rise as it does now.
+
+What's a good, simple interface?  We want the terminal code to be very simple, so we want to provide the nicest interface possible.
+
+---
+Existing interfaces are serial interfaces.  We could provide a bit-serial interface; queue up a list of bits (ie bytes) and send them off;
+check to see if any bits (bytes) are available, and return them if they are.  This requires the library implementation to have code that
+runs in the background; it's not conducive to easy implementation of new drivers.  But it's not that big an addition.
+
+I think tincanterm kind of already is the serial implementation.  We're trying to make it generic across platforms; one serial implementation.
+The question is what abstraction layer is needed to go under the serial implementation, to access the hardware.
+
+SEND
+Arduino: busy-wait (or poll for less accuracy), then send
+Pi: prep a waveform, have it sent in the background
+
+RECV:
+Both: set a handler on pin change
+
+Input comes from a serial stream, roughly, so we can block waiting on that to not exhaust cpu cycles on the pi.
+The main thread should probably spend time waiting on input.  So we could change the local reading function to be blocking.
+Then we could provide a callback when the input pin changes, with microseconds.
+
+Okay, I guess.
+
+---
+
+hmmmmmmm I'm thinking of an interface for sending that allows scheduling bits.  It would block on arduino and return immediately on pi.
+The thing is, on arduino we never know the exact time.  micros() will return with a delay.  On the pi, we can send things with exact timing.
+I guess since inside a critical section of code, micros() will return with theoretically always the same delay, we can just treat it as
+an offset.
+
+---
+settle time is 0 to 20 ms
+bitrate is 21 ms !
+
+if first settle time is late, problems will happen when settle time is early
+
+00000011 11110000 01111111 11111100
+      |........|........|........|
+
+
+If there's a delay receiving, and then we wait for the settle time -- the sum of those two needs to be less than the bitrate.
+
+So, they may not start receiving until max bit time.
+They will then wait max settle time.
+So min bit rate = max bit time + max settle time

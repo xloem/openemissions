@@ -1,5 +1,7 @@
 // Communication implementation for daemon-managed GPIO on a Raspberry PI
 
+// TODO: NONFUNCTIONAL UPDATE FOR NEW INTERFACE
+
 #include "impl.h"
 
 #define PIGPIOD 12

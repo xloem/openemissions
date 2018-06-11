@@ -52,10 +52,6 @@
 // pull resistor direction for input port
 #define INPUT_PULL  DOWN
 
-// set to nonzero if input should be set output-low before reading
-// this drains stored charge
-#define INPUT_DRAIN 0
-
 // baud rate for local communications, if applicable
 // note that if the device has no flow control the buffer will quickly fill, causing data loss unless rate is limited elsewhere
 #define LOCAL_BAUD 9600
