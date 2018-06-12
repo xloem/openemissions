@@ -16,9 +16,11 @@
 #define UP INPUT_PULLUP
 
 #define NOTHING_RECVD 0
-static volatile unsigned long recvMicros = NOTHING_RECVD;
-static volatile bool recvValue;
-static implRemoteHandler recvHandler;
+static volatile unsigned long recvChangeMicros = NOTHING_RECVD;
+static volatile bool recvNewValue = false;
+static bool recvPriorValue = false;
+static implRemoteRecvHandler recvHandler;
+static long recvDeadlineMicros;
 
 void implRemoteInit()
 {
@@ -36,15 +38,14 @@ void implLocalInit()
 
 static void queueRecvHandler()
 {
-  recvMicros = micros();
+  recvChangeMicros = micros();
+  recvNewValue = digitalRead(INPUT_PORT);
   #if INPUT_INVERT
-    recvValue = ! digitalRead(INPUT_PORT);
-  #else
-    recvValue = digitalRead(INPUT_PORT);
+    recvNewValue = ! recvNewValue;
   #endif
 }
 
-void implRemoteHandle(implRemoteHandler handler)
+void implRemoteRecvHandle(implRemoteRecvHandler handler, unsigned long deadline)
 {
   noInterrupts();
 
@@ -53,18 +54,35 @@ void implRemoteHandle(implRemoteHandler handler)
   attachInterrupt(digitalPinToInterrupt(INPUT_PORT), queueRecvHandler, CHANGE);
 
   interrupts();
+
+  recvDeadlineMicros = deadline;
 }
 
 static void poll()
 {
-  if (recvMicros != NOTHING_RECVD) {
-    noInterrupts();
-    unsigned long micros = recvMicros;
-    recvMicros = NOTHING_RECVD;
-    interrupts();
+  noInterrupts();
+  unsigned long changeMicros = recvChangeMicros;
+  unsigned long newValue = recvNewValue;
+  recvChangeMicros = NOTHING_RECVD;
+  long nowMicros = micros();
+  interrupts();
 
-    recvHandler(recvValue, micros);
-
+  if (recvDeadlineMicros - changeMicros > 0) {
+    if (changeMicros != NOTHING_RECVD) {
+      recvDeadlineMicros = recvHandler(recvPriorValue, newValue, changeMicros);
+      recvPriorValue = newValue;
+      changeMicros = NOTHING_RECVD;
+    }
+  }
+  // TODO: seems only to work with this check for recvDeadlineMicros != 0
+  // probably needed because poll() is getting called before these variables are set somehow
+  if (nowMicros - recvDeadlineMicros > 0 && recvDeadlineMicros != 0) {
+    recvDeadlineMicros = recvHandler(recvPriorValue, recvPriorValue, recvDeadlineMicros);
+  }
+  return;
+  if (changeMicros != NOTHING_RECVD) {
+    recvDeadlineMicros = recvHandler(recvPriorValue, newValue, changeMicros);
+    recvPriorValue = newValue;
   }
 }
 
@@ -91,7 +109,7 @@ unsigned long implRemoteSend(bool trueOrFalse)
   return ret;
 }
 
-void implRemoteSchedule(bool trueOrFalse, unsigned long time)
+void implRemoteSendSchedule(bool trueOrFalse, unsigned long time)
 {
   poll();
 
