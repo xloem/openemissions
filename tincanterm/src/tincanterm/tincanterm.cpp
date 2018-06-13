@@ -35,7 +35,7 @@ unsigned long handleInputState(bool priorValue, bool newValue, unsigned long tim
     if (newValue) {
       debug("<- ");
         debug((long)INPUT_PORT);
-        debug(" HIGH start");
+        debug(" HI start");
         debug(" @ ");
         debug((long)time);
         debug(LINEBREAK);
@@ -59,49 +59,42 @@ unsigned long handleInputState(bool priorValue, bool newValue, unsigned long tim
   } else if (time >= recvState.start) {
 
     // we're receiving and it's time to read the next bit
-    do {
+    if (recvState.bit >= WIRE_BITS) {
 
-      if (recvState.bit >= WIRE_BITS) {
-  
-        // done receiving
-        recvState.active = false;
-        recvState.start = time + 60000000;
-  
-        // decode and forward to user
-        debug("<- received ");
-          debug((long)recvState.wire);
-          debug(LINEBREAK);
-        char character = wireToAscii(recvState.wire);
-        debug("<- decoded to ");
-          debug((long)character);
-          debug(LINEBREAK);
-        implLocalSend(character);
+      // done receiving
+      recvState.active = false;
+      recvState.start = time + 60000000;
 
-        // bail
-        break;
-  
-      } else {
-  
-        // Read the bit
-        debug("<- ");
-          debug((long)INPUT_PORT);
-          debug(" Bit ");
-          debug((long)recvState.bit);
-          debug(": ");
-          debug(priorValue ? "HIGH" : "LOW");
-          debug(" @ ");
-          debug((long)recvState.start);
-          debug(LINEBREAK);
-        // Since wire starts all 0, we only need to change for HIGH
-        if (priorValue)
-          recvState.wire = recvState.wire | (1 << recvState.bit);
-    
-        // Update state
-        recvState.start += BIT_US;
-        recvState.bit += 1;
-      }
+      // decode and forward to user
+      debug("<- received ");
+        debug((long)recvState.wire);
+        debug(LINEBREAK);
+      char character = wireToAscii(recvState.wire);
+      debug("<- decoded to ");
+        debug((long)character);
+        debug(LINEBREAK);
+      implLocalSend(character);
 
-    } while (time > recvState.start);
+    } else {
+
+      // Read the bit
+      debug("<- ");
+        debug((long)INPUT_PORT);
+        debug(" Bit ");
+        debug((long)recvState.bit);
+        debug(": ");
+        debug(priorValue ? "HI" : "LO");
+        debug(" @ ");
+        debug((long)recvState.start);
+        debug(LINEBREAK);
+      // Since wire starts all 0, we only need to change for HIGH
+      if (priorValue)
+        recvState.wire = recvState.wire | (1 << recvState.bit);
+  
+      // Update state
+      recvState.start += BIT_US;
+      recvState.bit += 1;
+    }
 
   } else {
     debug("(<- ");
@@ -135,7 +128,7 @@ int main()
 
   debug("-> ");
     debug((long)OUTPUT_PORT);
-    debug(" LOW init @ ");
+    debug(" LO init @ ");
     debug((long)startMicros);
     debug(LINEBREAK);
 
@@ -156,7 +149,7 @@ int main()
     sendState.start = implRemoteSend(true);
     debug("-> ");
       debug((long)OUTPUT_PORT);
-      debug(" HIGH start @ ");
+      debug(" HI start @ ");
       debug((long)sendState.start);
       debug(LINEBREAK);
     sendState.start += BIT_US;
@@ -166,23 +159,23 @@ int main()
       debug((long)sendState.wire);
       debug(LINEBREAK);
 
-    // an extra bit is sent to return to the resting state
+    // one extra bit will be sent to return to the resting state
     while (sendState.bit <= WIRE_BITS) {
 
-      // Send the bit
+      // Send the current bit
       bool value = (sendState.wire >> sendState.bit) & 1;
-
-      implRemoteSendSchedule(value, sendState.start);
 
       debug("-> ");
         debug((long)OUTPUT_PORT);
         debug(" Bit ");
         debug((long)sendState.bit);
         debug(": ");
-        debug(value ? "HIGH" : "LOW");
+        debug(value ? "HI" : "LO");
         debug(" @ ");
         debug((long)sendState.start);
         debug(LINEBREAK);
+
+      implRemoteSendSchedule(value, sendState.start);
 
       // Update state
       sendState.start += BIT_US;

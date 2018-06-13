@@ -19,12 +19,18 @@
 static volatile unsigned long recvChangeMicros = NOTHING_RECVD;
 static volatile bool recvNewValue = false;
 static bool recvPriorValue = false;
-static implRemoteRecvHandler recvHandler;
+static implRemoteRecvHandler recvHandler = 0;
 static long recvDeadlineMicros;
 
 void implRemoteInit()
 {
   pinMode(INPUT_PORT, INPUT_PULL);
+
+  #if OUTPUT_INVERT
+  digitalWrite(OUTPUT_PORT, HIGH);
+  #else
+  digitalWrite(OUTPUT_PORT, LOW);
+  #endif
 
   pinMode(OUTPUT_PORT, OUTPUT);
 
@@ -60,6 +66,17 @@ void implRemoteRecvHandle(implRemoteRecvHandler handler, unsigned long deadline)
 
 static void poll()
 {
+  // can't do anything if no handler set
+  if (! recvHandler) return;
+
+  // if this function is called recursively it could cause a stack
+  // overflow.  this variable prevents this.
+  static bool recursing = false;
+  if (recursing) return;
+  recursing = true;
+
+
+  // atomically read input event
   noInterrupts();
   unsigned long changeMicros = recvChangeMicros;
   unsigned long newValue = recvNewValue;
@@ -67,6 +84,7 @@ static void poll()
   long nowMicros = micros();
   interrupts();
 
+  // dispatch handler calls in correct order
   if (recvDeadlineMicros - changeMicros > 0) {
     if (changeMicros != NOTHING_RECVD) {
       recvDeadlineMicros = recvHandler(recvPriorValue, newValue, changeMicros);
@@ -74,16 +92,19 @@ static void poll()
       changeMicros = NOTHING_RECVD;
     }
   }
-  // TODO: seems only to work with this check for recvDeadlineMicros != 0
-  // probably needed because poll() is getting called before these variables are set somehow
-  if (nowMicros - recvDeadlineMicros > 0 && recvDeadlineMicros != 0) {
+  if (nowMicros - recvDeadlineMicros > 0) {
     recvDeadlineMicros = recvHandler(recvPriorValue, recvPriorValue, recvDeadlineMicros);
   }
-  return;
   if (changeMicros != NOTHING_RECVD) {
+    while (recvDeadlineMicros < changeMicros) {
+      recvDeadlineMicros = recvHandler(recvPriorValue, recvPriorValue, recvDeadlineMicros);
+    }
     recvDeadlineMicros = recvHandler(recvPriorValue, newValue, changeMicros);
     recvPriorValue = newValue;
   }
+
+  // reset recursion prevention
+  recursing = false;
 }
 
 unsigned long implRemoteSend(bool trueOrFalse)
@@ -113,21 +134,23 @@ void implRemoteSendSchedule(bool trueOrFalse, unsigned long time)
 {
   poll();
 
+  // coarse delay to get precise delay cycles to fit within 16 bits 
+  while (micros() < time - 800);
+
+  // now, precise delay and send
   noInterrupts();
 
   #if OUTPUT_INVERT
   trueOrFalse = !trueOrFalse;
   #endif
+  unsigned long start = micros();
+  unsigned long us = time - start;
 
-  unsigned long us = time - micros();
-  #if AVR
-    unsigned long cycles = (F_CPU / 1000000) * us;
-    _delay_loop_2(cycles / 4);
-  #else
-    delayMicroseconds(us);
-  #endif
+  delayMicroseconds(us);
   
   digitalWrite(OUTPUT_PORT, trueOrFalse ? HIGH : LOW);
+
+  unsigned long fin = micros();
 
   interrupts();
 
@@ -136,11 +159,11 @@ void implRemoteSendSchedule(bool trueOrFalse, unsigned long time)
 
 void implLocalSend(char character)
 {
-  //poll();
+  poll();
 
   Serial.write(character);
 
-  //poll();
+  poll();
 }
 
 char implLocalRecv()

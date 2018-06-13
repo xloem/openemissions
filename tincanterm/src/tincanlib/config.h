@@ -13,12 +13,12 @@
  *
  * Receiver SFH250V wiring:
  *    Back left leg connects to GROUND
- *    Back right leg connects to ARDUINO PIN 4
+ *    Back right leg connects to ARDUINO PIN 3
  *    Back right leg additionally connects to a 10M Ohm resistor, which connects to +5V
  *
  * Transmitter SFH757V wiring:
  *    Back left leg connects to +5V
- *    Back right leg connects to a 100 Ohm resistor, which connects to ARDUINO PIN 5
+ *    Back right leg connects to a 100 Ohm resistor, which connects to ARDUINO PIN 4
  */
 
 
@@ -51,7 +51,7 @@
 
 // baud rate for local communications, if applicable
 // note that if the device has no flow control the buffer will quickly fill, causing data loss unless rate is limited elsewhere
-#define LOCAL_BAUD 19200
+#define LOCAL_BAUD 57600
 
 // unset to enable debugging output
 //#define NDEBUG 1
