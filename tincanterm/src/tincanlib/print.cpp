@@ -20,11 +20,21 @@ void print(long number)
   if (number < 0) {
     print('-');
     number = -number;
+  } else if (number == 0) {
+    print('0');
+    return;
   }
 
-  if (number >= 10000) print(char('0' + ((number / 10000) % 10)));
-  if (number >= 1000) print(char('0' + ((number / 1000) % 10)));
-  if (number >= 100) print(char('0' + ((number / 100) % 10)));
-  if (number >= 10) print(char('0' + ((number / 10) % 10)));
-  print(char('0' + (number % 10)));
+  char buf[32];
+  unsigned idx = sizeof(buf) - 1;
+  
+  buf[idx] = 0;
+
+  while (number != 0 && idx != 0) {
+    idx -= 1;
+    buf[idx] = (number % 10) + '0';
+    number /= 10;
+  }
+
+  print(&buf[idx]);
 }
