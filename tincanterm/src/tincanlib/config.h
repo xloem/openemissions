@@ -14,7 +14,7 @@
  * Receiver SFH250V wiring:
  *    Back left leg connects to GROUND
  *    Back right leg connects to RASPBERRY PI BCM_GPIO PIN 4
- *    Back right leg additionally connects to a 330K Ohm resistor, which connects to +5.0V
+ *    Back right leg additionally connects to a 1M Ohm resistor, which connects to +5.0V
  *
  * Transmitter SFH757V wiring:
  *    Back left leg connects to +3.3V
@@ -41,10 +41,10 @@
 #define LINEBREAK '\n'
 
 // microseconds to spend sending each bit (inverse baud in us)
-#define BIT_US 545
+#define BIT_US 425
 
 // delay to make sure bit value has settled when reading
-#define SETTLE_US 275
+#define SETTLE_US 320
 
 // pull resistor direction for input port
 #define INPUT_PULL  OFF
