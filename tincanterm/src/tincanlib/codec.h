@@ -19,6 +19,12 @@ const char WIRE_CTL_CHARS[] =
 	'\x03' // ctrl-C
 };
 
+// Chars that might be silently ignored (not used in codec.cpp)
+const char WIRE_IGN_CHARS[] =
+{
+  '\r' // excess carriage return
+};
+
 #define WIRE_SEQ_ASCII (ASCII_MAX - ASCII_MIN)
 #define WIRE_MAX (WIRE_SEQ_ASCII + sizeof(WIRE_CTL_CHARS)/sizeof(*WIRE_CTL_CHARS))
 #define WIRE_BITS 7

@@ -47,27 +47,36 @@ int main()
       // Check for new data to send
       if (implLocalAvail()) {
 
+        bool ignored = false;
+
         // Load character
         char character = implLocalRecv();
-        debug("-> sending character ");
-          debug((long)character);
-          debug(LINEBREAK);
-         
-        // Start sending character
-        debug("-> ");
-          debug((long)OUTPUT_PORT);
-          debug(" HIGH start");
-          debug(LINEBREAK);
 
-        sendState.active = true;
-        sendState.wire = asciiToWire(character);
-        sendState.start = implMicros() + BIT_US;
-        implRemoteSend(true);
-        sendState.bit = 0;
-        debug("-> encoding as ");
-          debug((long)sendState.wire);
-          debug(LINEBREAK);
+        // Check if character is squelched
+        for (unsigned i = 0; i < sizeof(WIRE_IGN_CHARS); ++ i)
+          if (character == WIRE_IGN_CHARS[i])
+            ignored = true;
 
+        if (!ignored) {
+          debug("-> sending character ");
+            debug((long)character);
+            debug(LINEBREAK);
+           
+          // Start sending character
+          debug("-> ");
+            debug((long)OUTPUT_PORT);
+            debug(" HIGH start");
+            debug(LINEBREAK);
+  
+          sendState.active = true;
+          sendState.wire = asciiToWire(character);
+          sendState.start = implMicros() + BIT_US;
+          implRemoteSend(true);
+          sendState.bit = 0;
+          debug("-> encoding as ");
+            debug((long)sendState.wire);
+            debug(LINEBREAK);
+        }
       }
 
     } else if (implMicros() >= sendState.start) {
