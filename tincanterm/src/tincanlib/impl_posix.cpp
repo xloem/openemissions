@@ -37,11 +37,12 @@ void implLocalInit()
   fflush(stdout);
 }
 
-unsigned long implMicros()
+unsigned long implNanos()
 {
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC, &ts);
-  return ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
+  unsigned long secs = ts.tv_sec;
+  return secs * 1000000000 + ts.tv_nsec;
 }
 
 void implLocalSend(char character)
