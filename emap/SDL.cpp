@@ -153,7 +153,7 @@ void SDLWindow::performSize(std::pair<int, int> * dims)
 	sdlErr( SDL_GetRendererOutputSize(renderer.get(), &dims->first, &dims->second) );
 }
 
-void SDLWindow::setLines(std::vector<itpp::vec> const & values)
+void SDLWindow::setLines(std::vector<vec> const & values)
 {
 	{
 		std::lock_guard<std::mutex> dataLk(dataMtx);
@@ -166,12 +166,12 @@ void SDLWindow::setLines(std::vector<itpp::vec> const & values)
 	sdlErr( SDL_PushEvent(&event) );
 }
 
-void SDLWindow::setImage(itpp::mat const & values)
+void SDLWindow::setImage(mat const & values)
 {
 	SDL_CustomWindowEvent event(SDL_CustomWindowEvent::TEXTURE, this, &values);
 }
 
-void SDLWindow::addRow(itpp::vec const & values)
+void SDLWindow::addRow(vec const & values)
 {
 	SDL_CustomWindowEvent event(SDL_CustomWindowEvent::SCROLL, this, &values);
 }
@@ -181,7 +181,7 @@ void SDLWindow::setText(std::string const & value)
 	SDL_CustomWindowEvent event(SDL_CustomWindowEvent::TEXT, this, &value);
 }
 
-void SDLWindow::performScroll(itpp::vec const * values)
+void SDLWindow::performScroll(vec const * values)
 {
 	std::pair<int, int> dims;
 	if (!textureData) {
@@ -200,7 +200,7 @@ void SDLWindow::performScroll(itpp::vec const * values)
 	uint8_t * pixel = pixels + offset;
 	for (int x = 0; x < dims.first; ++ x) {
 		int x2 = x * values->size() / dims.first;
-		uint8_t c = values->_elem(x2) * (256.0 - std::numeric_limits<double>::epsilon() * 256.0);
+		uint8_t c = (*values)[x2] * (256.0 - std::numeric_limits<double>::epsilon() * 256.0);
 		*(pixel ++) = c;
 		*(pixel ++) = c;
 		*(pixel ++) = c;
@@ -210,7 +210,7 @@ void SDLWindow::performScroll(itpp::vec const * values)
 	performDraw();
 }
 
-void SDLWindow::performTexture(itpp::mat const * values)
+void SDLWindow::performTexture(mat const * values)
 {
 	int w = 0, h = 0;
 	if (textureData)
@@ -231,7 +231,7 @@ void SDLWindow::performTexture(itpp::mat const * values)
 	for (int y = 0, i = 0; y < values->rows(); ++ y, pixels += pitch) {
 		uint8_t * pixel = pixels;
 		for (int x = 0; x < values->cols(); ++ x, ++ i) {
-			uint8_t c = values->_elem(y, x) * (256.0 - std::numeric_limits<double>::epsilon() * 256.0);
+			uint8_t c = (*values)(y, x) * (256.0 - std::numeric_limits<double>::epsilon() * 256.0);
 			*(pixel ++) = c;
 			*(pixel ++) = c;
 			*(pixel ++) = c;
@@ -319,10 +319,10 @@ void SDLWindow::receiveSDLEvent(SDL_Event & event)
 						performDestroy();
 						break;
 					case SDL_CustomWindowEvent::TEXTURE:
-						performTexture(reinterpret_cast<itpp::mat const *>(e.dataPtr));
+						performTexture(reinterpret_cast<mat const *>(e.dataPtr));
 						break;
 					case SDL_CustomWindowEvent::SCROLL:
-						performScroll(reinterpret_cast<itpp::vec const *>(e.dataPtr));
+						performScroll(reinterpret_cast<vec const *>(e.dataPtr));
 						break;
 					case SDL_CustomWindowEvent::TEXT:
 						performText(reinterpret_cast<std::string const *>(e.dataPtr));

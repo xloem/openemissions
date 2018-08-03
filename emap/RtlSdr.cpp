@@ -218,9 +218,9 @@ bool RtlSdr::process(std::vector<uint8_t> & buf)
 	if (buf.empty())
 		return false;
 
-	itpp::cvec data;
+	cvec data;
 
-	data.set_size(buf.size() / 2);
+	data.resize(buf.size() / 2);
 	for (int i = 0; i < data.size(); ++ i) {
 		data[i].real( (buf[i*2] - 127.5) / 127.5 );
 		data[i].imag( (buf[i*2+1] - 127.5) / 127.5 );

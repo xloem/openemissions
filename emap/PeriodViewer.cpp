@@ -1,8 +1,6 @@
 #include "PeriodViewer.hpp"
 
 #include <cmath>
-#include <itpp/base/operators.h>
-#include <itpp/signal/transforms.h>
 
 #include "GUI.hpp"
 
@@ -31,7 +29,7 @@ double PeriodViewer::hertz()
 	return frequency;
 }
 
-void PeriodViewer::receiveQuadrature(itpp::cvec const & data, double samplingHertz, double tunedHertz, double dBGain, double unixSecondsCompleted, class Source & source)
+void PeriodViewer::receiveQuadrature(cvec const & data, double samplingHertz, double tunedHertz, double dBGain, double unixSecondsCompleted, class Source & source)
 {
 	if (&source != &this->source)
 		return;
@@ -43,10 +41,10 @@ void PeriodViewer::receiveQuadrature(itpp::cvec const & data, double samplingHer
 			expectedTuningHz = tunedHertz;
 			periodLen = samplingHertz / frequency;
 			currentOffset = 0;
-			waveform.set_size(periodLen);
-			waveform.zeros();
-			weight.set_size(periodLen);
-			weight.zeros();
+			waveform.resize(periodLen);
+			waveform.setZero();
+			weight.resize(periodLen);
+			weight.setZero();
 		}
 	}
 
@@ -59,7 +57,7 @@ void PeriodViewer::receiveQuadrature(itpp::cvec const & data, double samplingHer
 			wavePos -= waveform.size();
 	}
 
-	window->setLines({elem_div(itpp::abs(waveform), weight)});
+	window->setLines({waveform.array().abs() / weight.array()});
 
 	/*
 	add vector to other vector with fractional offset

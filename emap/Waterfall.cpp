@@ -1,21 +1,20 @@
 #include "Waterfall.hpp"
 
-#include <itpp/signal/transforms.h>
-
 Waterfall::Waterfall(Source & source)
 : Oscilloscope(source, "Waterfall")
 { }
 
 #include <iostream>
 
-void Waterfall::receiveQuadrature(itpp::cvec const & datavec, double samplingHz, double tunedHertz, double gainDB, double unixSecondsCompleted, Source & source)
+void Waterfall::receiveQuadrature(cvec const & datavec, double samplingHz, double tunedHertz, double gainDB, double unixSecondsCompleted, Source & source)
 {
 	if (&source != &this->source)
 		return;
 
-	itpp::vec row = itpp::abs(itpp::fft(datavec)) * (128.0 / datavec.size());
+	vec row = abs(fft.execute(datavec)) * (256.0 / datavec.size());
 
-	row = itpp::concat(row,row.split(row.size()/2));
+  size_t half = row.size() / 2;
+  row.head(half).swap(row.tail(half));
 
 	window->addRow(row);
 

@@ -1,9 +1,10 @@
 #pragma once
 
-#include <itpp/base/vec.h>
 #include <memory>
 #include <stdexcept>
 #include <string>
+
+#include "Common.hpp"
 
 class Destination
 {
@@ -13,7 +14,7 @@ protected:
 	void done();
 	~Destination() noexcept(false);
 private:
-	virtual void receiveQuadrature(itpp::cvec const & data, double samplingHertz, double tunedHertz, double dBGain, double unixSecondsCompleted, class Source & source) { throw std::invalid_argument("unimplemented"); }
+	virtual void receiveQuadrature(cvec const & data, double samplingHertz, double tunedHertz, double dBGain, double unixSecondsCompleted, class Source & source) { throw std::invalid_argument("unimplemented"); }
 };
 
 class SourceType
@@ -49,7 +50,7 @@ public:
 	static void _deregister(std::string name);
 
 protected:
-	void dispatchQuadrature(itpp::cvec const & data, double samplingHertz, double tunedHertz, double dbGain, double unixSecondsCompleted);
+	void dispatchQuadrature(cvec const & data, double samplingHertz, double tunedHertz, double dbGain, double unixSecondsCompleted);
 };
 
 #include "readerwriterqueue/readerwriterqueue.h"

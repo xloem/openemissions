@@ -13,14 +13,14 @@ Spectrum::~Spectrum()
 	done();
 }
 
-void Spectrum::receiveQuadrature(itpp::cvec const & data, double samplingHertz, double tunedHz, double dBGain, double unixSecondsCompleted, class Source & source)
+void Spectrum::receiveQuadrature(cvec const & data, double samplingHertz, double tunedHz, double dBGain, double unixSecondsCompleted, class Source & source)
 {
 	if (&source != &this->source)
 		return;
 
-	itpp::vec fft = itpp::abs(itpp::fft(data)) * (128.0 / data.size());
+	vec fft = abs(fft.execute(data)) * (128.0 / data.size());
 
-	fft = itpp::concat(fft,fft.split(fft.size()/2));
+	concat(fft, tail(fft, fft.size()/2));
 
 	window->setLines(fft);
 }

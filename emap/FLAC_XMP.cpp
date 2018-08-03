@@ -25,7 +25,7 @@ protected:
 			return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;
 
 		unsigned samples = frame->header.blocksize;
-		itpp::cvec data(samples);
+		cvec data(samples);
 
 		for (unsigned i = 0; i < samples; ++ i) {
 			data[i].real(buffer[0][i] / 127.0);
@@ -68,7 +68,7 @@ FLAC_XMP::~FLAC_XMP()
 {
 }
 
-void FLAC_XMP::processSamples(itpp::cvec const & data)
+void FLAC_XMP::processSamples(cvec const & data)
 {
 	size_t flacIndex = 0;
 

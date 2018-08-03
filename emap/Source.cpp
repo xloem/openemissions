@@ -31,7 +31,7 @@ SourceType::SourceType(std::string name)
 : name(name)
 { }
 
-void Source::dispatchQuadrature(itpp::cvec const & data, double samplingHertz, double tunedHertz, double dBGain, double unixSecondsCompleted)
+void Source::dispatchQuadrature(cvec const & data, double samplingHertz, double tunedHertz, double dBGain, double unixSecondsCompleted)
 {
 	std::lock_guard<std::mutex> receiversLk(receiversMtx);
 	for (Destination * receiver : receivers)

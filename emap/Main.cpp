@@ -32,11 +32,13 @@ Main::Main()
 
 	if (sources.size() > 0) {
 		//sources[0]->tuneHertz(100000000);
-		sources[0]->tuneHertz(76750000); // my thinkpad's pixel clock
+		//sources[0]->tuneHertz(76750000); // my thinkpad's pixel clock
+		sources[0]->tuneHertz(147800000); // my purism's advertised pixel clock
 		
 		Oscilloscope scope0(*sources[0].get());
 		Waterfall waterfall0(*sources[0].get());
-		PeriodFinder periods0(50, 130, 0.01, *sources[0].get(), sources[0]->hertz());
+		//PeriodFinder periods0(39.09, 40.01, 0.01, *sources[0].get(), sources[0]->hertz());
+		//PeriodFinder periods0(55, 65, 0.01, *sources[0].get(), sources[0]->hertz());
 		//PeriodFinder periods0(300000, 1200000, *sources[0].get(), sources[0]->hertz());
 		//PeriodViewer period0(60.1, *sources[0].get());
 

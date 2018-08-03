@@ -9,7 +9,7 @@ class PeriodViewer : public Destination
 public:
 	PeriodViewer(double frequency, Source & source);
 	~PeriodViewer();
-	void receiveQuadrature(itpp::cvec const & data, double samplingHertz, double tunedHertz, double dBGain, double unixSecondsCompeted, class Source & source);
+	void receiveQuadrature(cvec const & data, double samplingHertz, double tunedHertz, double dBGain, double unixSecondsCompeted, class Source & source);
 
 	double tuneHertz(double);
 	double hertz();
@@ -26,6 +26,6 @@ private:
 	double periodLen;
 	double currentOffset;
 	
-	itpp::cvec waveform;
-	itpp::vec weight;
+	cvec waveform;
+	vec weight;
 };

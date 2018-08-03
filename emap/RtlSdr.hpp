@@ -7,7 +7,6 @@
 #include <mutex>
 #include <vector>
 
-#include <itpp/base/vec.h>
 
 
 class RtlSdr : public Source, public DriverThread<std::vector<uint8_t>>

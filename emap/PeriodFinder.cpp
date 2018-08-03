@@ -71,33 +71,32 @@ Alternatively we could just record the information for a wide variety of periods
 It seems we should start with the latter, to make a nice display that would aid in deciding what determines a peak.
 */
 
-#include <itpp/stat/misc_stat.h>
-double evaluateWaveform(itpp::cvec & waveform, double scale, typename itpp::cvec::value_type mean)
+double evaluateWaveform(cvec & waveform, double scale, cmplx mean)
 {
   // TODO: make this pluggable; waveform plug-in should probably handle recording the peak too
-  return (itpp::sum(itpp::abs(waveform - mean))) / waveform.size() / scale;
+  return (sum(abs(waveform.array() - mean))) / waveform.size() / scale;
 }
 
-void PeriodFinder::receiveQuadrature(itpp::cvec const & newData, double samplingHertz, double tunedHertz, double dBGain, double unixSecondsCompleted, class Source & source)
+void PeriodFinder::receiveQuadrature(cvec const & newData, double samplingHertz, double tunedHertz, double dBGain, double unixSecondsCompleted, class Source & source)
 {
 	if (&source != &this->source || samplingHertz != expectedSamplingHz || tunedHertz != this->tunedHz)
 		return;
 
   // TODO: we probably don't need to store ALL of this old data ...
   // for sure!  it's crashing the prog due to memory exhaustion
-	data = itpp::concat(data, newData);
+	concat(data, newData);
 
-	itpp::vec strengths(window->size().first);
+	vec strengths(window->size().first);
 	double totalBestValue  = -0.0/1.0;
   double totalBestPeriod = 0;
-	itpp::vec totalBest;
+	vec totalBest;
 
   double shortLength = floor(shortestPeriod);
   double totalCount = floor(data.size() / shortLength);
   double longCount = floor((shortestPeriod - shortLength) * totalCount);
 
-  itpp::cvec waveform(shortLength);
-  typename itpp::cvec::value_type sampleSum;
+  cvec waveform{int(shortLength)};
+  cmplx sampleSum;
   std::vector<int> periodStarts(totalCount);
   bool needToInitializeWaveform = true;
 
@@ -126,7 +125,7 @@ void PeriodFinder::receiveQuadrature(itpp::cvec const & newData, double sampling
 
         sampleSum = 0;
         for (double j = 0; j < shortLength; ++ j) {
-          waveform[j] = 0;
+          waveform[j]= 0;
           for (double i = 0; i < totalCount; ++ i)
           {
             auto sample = data[periodStarts[i] + j];
@@ -162,7 +161,7 @@ void PeriodFinder::receiveQuadrature(itpp::cvec const & newData, double sampling
         totalBestValue = value;
         totalBestPeriod = precisePeriod;
         // TODO: uncommenting the following seems to corrupt things somehow ...
-        //totalBest = itpp::abs(waveform);
+        //totalBest = abs(waveform);
       }
 
       // advance to the next period
@@ -184,7 +183,7 @@ void PeriodFinder::receiveQuadrature(itpp::cvec const & newData, double sampling
         ++ shortLength;
       } while (longCount >= totalCount);
 
-      waveform.set_size(shortLength);
+      waveform.resize(shortLength);
       needToInitializeWaveform = true;
     }
   }
@@ -199,7 +198,7 @@ void PeriodFinder::receiveQuadrature(itpp::cvec const & newData, double sampling
 		double bestPeriod;
 		double bestValue = -0.0/1.0;
 
-		itpp::cvec waveform(shortLength);
+		cvec waveform(shortLength);
 		for (double increment = 0; increment < increments; ++ increment) {
 			waveform.zeros();
 			for (double i = 0; i < increments; ++ i) {
@@ -215,7 +214,7 @@ void PeriodFinder::receiveQuadrature(itpp::cvec const & newData, double sampling
 				bestPeriod = period;
 				if (bestValue > totalBestValue) {
 					totalBestValue = bestValue;
-					totalBest = itpp::abs(waveform);
+					totalBest = abs(waveform);
 				}
 			}
 		}

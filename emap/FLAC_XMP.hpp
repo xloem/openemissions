@@ -2,8 +2,6 @@
 
 #include "Source.hpp"
 
-#include "itpp/base/vec.h"
-
 namespace tinyxml2 { class XMLDocument; class XMLElement; }
 
 class FLAC_XMP : public Source
@@ -14,7 +12,7 @@ public:
 	~FLAC_XMP();
 
 private:
-	void processSamples(itpp::cvec const & data);
+	void processSamples(cvec const & data);
 
 	std::unique_ptr<class FLACFileDecoder> flacDecoder;
 	std::unique_ptr<tinyxml2::XMLDocument> xmlDocument;
