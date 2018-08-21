@@ -1,11 +1,10 @@
 // Local communication implementations for POSIX platforms
 
-// turn off stdin line buffering
-
 #include "impl.h"
 
 #if unix
 
+#include <fcntl.h>
 #include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,53 +12,47 @@
 #include <time.h>
 #include <unistd.h>
 
-static int check(int e)
+static int check(int e, const char *caller)
 {
   if (e < 0) {
-    perror("posixerror");
+    perror(caller);
     exit(e);
   }
   return e;
 }
 
-static struct termios termios_orig;
-static int tcgetret;
+static int pty_master;
 
 void implLocalInit()
 {
-  // adjust terminal for convenient use
-  struct termios attrs;
+  // create pseudoterminal
+  pty_master = posix_openpt(O_RDWR | O_NOCTTY);
+  check(pty_master, "impl_posix posix_openpt");
 
-  tcgetret = tcgetattr(0, &attrs);
-  if (tcgetret == 0) { // there will be a nonzero error if not connected to a terminal
+  check(grantpt(pty_master), "impl_posix grantpt");
+  check(unlockpt(pty_master), "impl_posix unlockpt");
 
-    termios_orig = attrs;
-  
-    // disable canonical mode and hence line buffering
-    attrs.c_lflag &= ~ICANON;
-  
-    // disable local echo
-    attrs.c_lflag &= ~ECHO;
-  
-    check(tcsetattr(0, 0, &attrs));
-  };
+  // provide to user
+  printf("%s\n", ptsname(pty_master));
+  fflush(stdout);
 }
 
-unsigned long implMicros()
+unsigned long implNanos()
 {
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC, &ts);
-  return ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
+  unsigned long secs = ts.tv_sec;
+  return secs * 1000000000 + ts.tv_nsec;
 }
 
 void implLocalSend(char character)
 {
-  write(1, &character, 1);
+  write(pty_master, &character, 1);
 }
 
 bool implLocalAvail()
 {
-  static struct pollfd readwait = { 0, POLLIN, 0 };
+  static struct pollfd readwait = { pty_master, POLLIN, 0 };
   int r = poll(&readwait, 1, 0);
   return r > 0;
 }
@@ -67,22 +60,19 @@ bool implLocalAvail()
 char implLocalRecv()
 {
   char character;
-  int r = read(0, &character, 1);
+  int r = read(pty_master, &character, 1);
   if (r == 1) return character;
 
   // some error or EOF
   implLocalDestroy();
   implRemoteDestroy();
-  check(r);
+  check(r, "impl_posix read");
   exit(0);
 }
 
 void implLocalDestroy()
 {
-  if (tcgetret == 0) {
-    // restore original terminal settings
-    tcsetattr(0, 0, &termios_orig);
-  }
+  close(pty_master);
 }
 
 #endif
