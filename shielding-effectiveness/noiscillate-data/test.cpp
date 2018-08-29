@@ -1,15 +1,9 @@
-#include <Eigen/Core>
-
 #include <iostream>
 #include <vector>
 
-using Scalar = double;
-using Complex = std::complex<Scalar>;
+#include "types.hpp"
 
-template <typename Type>
-using HeapVector = Eigen::Matrix<Type, Eigen::Dynamic, 1>;
-template <typename Type, size_t size>
-using StackVector = Eigen::Matrix<Type, Eigen::Dynamic, 1, 0, size>;
+#include "stats.hpp"
 
 class RtlSdrIQDump
 {
@@ -38,128 +32,149 @@ public:
     vec.imag() = eigenScalarData.row(1);
   }
 
+  static constexpr Scalar epsilon() { return 1 / 127.5; }
+
 private:
   std::istream & stream;
 };
 
-// maintains a running expected value and error given incoming samples
-// assumes gaussian input
+/*
 template <typename T>
-class StatsAccumulatorGaussianPct
+class StatsAccumulatorHistogram
 {
 public:
   using Scalar = T;
 
-  StatsAccumulatorGaussianPct(T pct)
-  : cutoff(erfinv(pct)),
-    mean(0),
+  StatsAccumulatorHistogram(T binWidth, T start = 0)
+  : binWidth(binWidth),
+    binDensity(1.0 / binWidth),
+    binStart(start * binDensity),
+    count(0),
     dataSum(0),
     dataSquaredSum(0),
-    count(0)
   { }
 
-  StatsAccumulatorGaussianPct(StatsAccumulatorGaussianPct const & other) = default;
-
-  template <typename Derived>
   void add(Eigen::DenseBase<Derived> const & chunk)
   {
+    using Eigen::numext::floor;
+
     count += chunk.size();
-    // note: sum() and squaredNorm() do the right component-wise thing for vectors and for
-    //       matrices: i.e. treating every entry as simple an item to add to the stats
     dataSum += chunk.sum();
     dataSquaredSum += chunk.derived().matrix().squaredNorm();
-    /*
-     * variance = sum(delta * delta) / (n - 1)
-     * delta[i] = data[i] - mean
-     *
-     * sum((data[i] - mean) * (data[i] - mean)) / (n - 1)
-     * sum(data[i] * data[i] - 2 * data[i] * mean + mean * mean) / (n - 1)
-     * (sum(data[i] * data[i]) - 2 * mean * sum(data[i]) + mean * mean * n) / (n - 1)
-     *
-     * mean = sum(data[i]) / n
-     *
-     * variance = (dataSquaredSum - dataSum * dataSum / n) / (n - 1)
-     */
 
-    mean = dataSum / count;
+    auto chunkScaled = (chunk.derived().array() * binDensity - binStart).eval();
 
-    // actual variance calculation moved to error() call
-  }
-
-  T const & expectedValue() const
-  {
-    return mean;
-  }
-
-  T error() const
-  {
-    using Eigen::numext::sqrt;
-
-    T variance = (dataSquaredSum - dataSum * mean) / (count - 1);
-
-    // the variance of an averaged set of samples is the variance of one
-    // sample divided by the number of samples taken
-    return sqrt(variance / count) * cutoff;
-  }
-
-  // takes a bunch of statsaccumulators, subtracts their differing means,
-  // and determines their error as if treated as one dataset
-  T groupError(std::vector<StatsAccumulatorGaussianPct<T>> const & group) const
-  {
-    using Eigen::numext::sqrt;
-    /*
-     * delta[i][j] = data[i][j] - mean[i]
-     * variance = sum(delta * delta) / sum(n - 1)
-     *
-     * sum(data[i][j] * data[i][j] - 2 * data[i][j] * mean[i] + mean[i] * mean[i]) / (sum(n[i]) - 1)
-     * (sum(data[i][j] * data[i][j]) - 2 * sum(data[i][j] * mean[i]) + sum(mean[i] * mean[i])) / (sum(n[i]) - 1)
-     * (sum(dataSquaredSum) - 2 * sum(data[i][j] * mean[i]) + sum(mean[i] * mean[i])) / (sum(n[i]) - 1)
-     *
-     * mean[i] = sum_j(data[i][j]) / n[i]
-     *
-     * (sum_i(dataSquaredSum) - 2 * sum_i(sum_j(data[i][j]) * mean[i]) + sum_i(mean[i] * mean[i])) / (sum_i(n[i]) - 1)
-     * (sum_i(dataSquaredSum) - 2 * sum_i(sum_j(data[i][j]) * sum_j(data[i][j])/n[i]) + sum_i(sum_j(data[i][j]) / n[i] * sum_j(data[i][j]) / n[i])) / (sum_i(n[i]) - 1)
-     *
-     * (sum_i(dataSquaredSum[i]) - 2 * sum_i(dataSum[i] * dataSum[i] / n[i]) + sum_i(dataSum[i] * dataSum[i] / n[i] / n[i])) / (sum_i(n[i]) - 1)
-     *
-     * (sum_i(dataSquaredSum[i]) - 2 * sum_i(dataSum[i] * mean[i]) + sum_i(mean[i] * mean[i])) / (sum_i(n[i]) - 1)
-     * (sum_i(dataSquaredSum[i] - 2 * dataSum[i] * mean[i] + mean[i] * mean[i]) / (sum_i(n[i]) - 1)
-     * (sum_i(dataSquaredSum[i] + mean[i] * (mean[i] - 2 * dataSum[i])) / (sum_i(n[i]) - 1)
-     */
-
-    T numerator = 0;
-    T denominator = 0;
-    for (auto const & accum : group)
+    int minIdx = floor(chunkScaled.min());
+    if (minIdx < 0)
     {
-      numerator += accum.dataSquaredSum + accum.mean * (accum.mean - 2 * accum.dataSum);
-      denominator += accum.count;
+      size_t shift = -minIdx;
+      size_t oldSize = bins.size();
+      bins.resize(oldSize + shift);
+      bins.tail(oldSize) = bins.head(oldSize);
+      bins.head(shift).setZero();
+      binStart -= shift;
+      chunkScaled += shift;
+      minIdx = 0;
     }
-    T variance = numerator / (denominator - 1);
-    return sqrt(variance / denominator) * cutoff;
+
+    auto chunkByIndex = chunkScaled.cast<size_t>();
+
+    size_t maxIdx = chunkByIndex.max();
+    if (maxIdx >= bins.size())
+    {
+      bins.resize(maxIdx + 1, 0);
+    }
+    
+    ++ bins[chunkByIndex.redux([this](T lastIdx, T nextIdx) -> T {
+      ++ bins[lastIdx];
+      return nextIdx;
+    })];
+  }
+
+  T const & mean() const
+  {
+    return dataSum / count;
+  }
+
+  T const & variance() const
+  {
+    // sum((x - mean)^2) / n1
+    // sum(x^2 - 2 * mean * x + mean^2) / n1
+    // sum(x^2 + mean^2 - 2 * mean * x) / n1
+    // (sum(x^2) + N*mean^2 - 2 * mean * sum(x)) / n1
+    // (sum(x^2) + mean*(N*mean - 2 * sum(x))) / n1
+    //
+    // mean = sum(x) / N
+    //
+    // (sum(x^2) + mean*(N*sum(x) / N - 2 * sum(x))) / n1
+    // (sum(x^2) + mean*(sum(x) - 2 * sum(x))) / n1
+    // (sum(x^2) - mean*sum(x)) / n1
+    return (dataSquaredSum - dataSum * mean()) / (count - 1);
+  }
+
+  template <typename StatsAccumulator>
+  T chanceMeanGivenBaseline(StatsAccumulator const & baseline)
+  {
+    using Eigen::numext::erfc;
+    using Eigen::numext::abs;
+    // get standard error of means from baseline
+    // return erfc(abs(averageDelta) / stderr)
+  }
+
+  T chanceAverageThisLarge() const
+  {
+    // gives a metric with regard to how likely this data is a random fluke
+
+    // assume the population has a mean of zero
+    // estimate its variance with sum(x) / (n - 1)
+    // then its standard error of means is sqrt(variance / n)
+    //   stderr = sqrt(sum(x) / (n * (n - 1)))
+    
+    // the chance we got an average this large is then
+    //   1.0 - erf(average / stderr)
+
+    // reduce:
+    // average / stderr
+    // (dataSum / n) / sqrt(dataSum / (n * (n - 1)))
+    // sqrt(dataSum^2 / n^2 / (dataSum / (n * (n - 1))))
+    // sqrt(dataSum^2 * (n * (n - 1)) / (n^2 * dataSum))
+    // sqrt(dataSum * (n * (n - 1)) / n^2)
+    // = sqrt(dataSum * (n - 1) / n)
+    return erfc(sqrt(dataSum * (count - 1) / count));
   }
 
 private:
-  T cutoff;
-  T mean;
+  T binWidth;
+  T binDensity;
+  T binStart;
+  HeapVector<T> bins;
+  size_t count;
   T dataSum;
   T dataSquaredSum;
-  T count;
 
-  // from https://stackoverflow.com/a/40260471
-  static constexpr T erfinv(T x)
+  inline void add(T val)
   {
-    using Eigen::numext::sqrt;
-    using Eigen::numext::log;
+    int idx = (val - binStart) * binDensity;
+    if (idx < 0) {
+      size_t shift = -idx;
+      idx = 0;
+      bins.insert(0, shift, 0);
+      binStart -= shift * binDensity;
+    }
+    else if (idx >= bins.size())
+    {
+      bins.resize(idx + 1, 0);
+    }
+    ++ bins[idx];
+  }
 
-    x = (1 - x)*(1 + x);        // x = 1 - x*x;
-    T lnx = log(x);
-    
-    T tt1 = 2/(EIGEN_PI*0.147) + 0.5f * lnx;
-    T tt2 = 1/(0.147) * lnx;
-    
-    return sqrt(-tt1 + sqrt(tt1*tt1 - tt2));
+  T binToValue(size_t idx)
+  {
+    return idx * binWidth + binStart;
   }
 };
+
+*/
 
 // TODO: our signal _IS NOISE_ which complicates things!
 // to resolve this you just have to start writing about what it implies.
@@ -169,15 +184,17 @@ private:
 // TODO: run it!  the pieces are almost all there!
 
 // uses 4 stats bins in an attempt to quickly identify noise that's toggled in a square wave with 50% duty cycle
+// TODO: make a model like this but that uses a tree of stats accumulators for adaptive subsampling
 template <typename StatsAccumulator, size_t NUM_BINS = 4>
 class PeriodModelAccumulatorNoiscillate
 {
 public:
   using Detail = StatsAccumulator;
+  using Scalar = typename StatsAccumulator::Scalar;
 
   PeriodModelAccumulatorNoiscillate(size_t period, Detail const & accum = {})
   : offset(0),
-    bins{accum, accum, accum, accum},
+    bins{{accum, accum, accum, accum}},
     period(period),
     periodStride(period)
   { }
@@ -185,34 +202,6 @@ public:
   template <typename Derived>
   void add(Eigen::PlainObjectBase<Derived> const & chunk)
   {
-    // okay .... we want to store lengths of chunk into the bins
-    //
-    // note that in my first example, the period length is longer than the chunk
-    // length.  but should code for the opposite too.
-
-    // which bin does each sample go in?
-    // period is length of 4 bins
-    // length of 1 bin is period / 4, max remainder is 3
-    //
-    // (offset % period) / (period / 4) is bin number
-    // (offset % period) * 4 / period is bin number
-    //    
-    // (offset % period) % (period / 4) would be bin offset except it doesn't deal
-    // with rounding error
-    //
-    // TODO NEXT
-    //
-    // Okay, so, given an offset into a period, the bin is pretty precisely
-    // binnum = offset * numbins / periodlength
-    //
-    // given a bin, the start is
-    // offset = ceil(binnum * periodlength / numbins)
-    //
-    // an integer ceil can be taken via
-    // inter = binnum * periodlength
-    // offset = inter / numbins + (inter % numbins ? 1 : 0)
-
-    // our offset will be likely partway through a bin (but not always)
     // 1. fill first partial bin to the end, if needed
     size_t bin = offset * NUM_BINS / period;
     size_t tail = binStart(bin + 1);
@@ -220,54 +209,210 @@ public:
     if (chunkPos >= chunk.size())
     {
       bins[bin].add(chunk);
+      offset = (offset + chunk.size()) % period;
       return;
     }
     bins[bin].add(chunk.head(chunkPos));
-    offset = tail % period;
-    bin = (bin + 1) % NUM_BINS;
 
     // 2. use maps and strides to fill a mess of bins
     
-    size_t chunkTail = chunkPos + period;
-    if (chunkTail > chunk.size())
-    {
-      // TODO: make sure we have the right periodCount for every map made
-      //       depending on how that is calculated, this line could be changed, as atm
-      //       it doesn't pick a tail that's aligned with period boundaries
-      chunkTail = chunk.size();
-    }
-    // also need to find total length
+    size_t endBin = bin;
+    size_t chunkTailPos = 0;
+    size_t chunkTailBin;
+    do {
+      offset = tail % period;
+      bin = (bin + 1) % NUM_BINS;
 
-    // okay, we start at chunkPos in chunk, and I guess the appropriate way is
-    // to use the outer stride to look at the whole chunk 4 different times.
-    // need to keep the total size within proper limits
+      tail = binStart(bin + 1);
+      size_t binLen = tail - offset;
+      size_t periods = (chunk.size() - chunkPos) / period;
 
-    // NOTE it is fine to pass a rectangular matrix to statsAccumulator.add(); it will Do The Right Thing
+      size_t possibleEnd = chunkPos + periods * period;
+      if (possibleEnd > chunkTailPos)
+      {
+        chunkTailPos = possibleEnd;
+        chunkTailBin = bin;
+      }
 
-    // TODO
-    //  - [ ] set periodCount
-    //  - [ ] loop over all bins
-    //  - [ ] add map content to bin
-    Eigen::Map<Derived const, 0, decltype(periodStride>) map(chunk.derived().data() + chunkPos, period, periodCount, periodStride);
+      if (periods > 0)
+      {
+        // note that this is a rectangular matrix, and statsaccumulator is expected to still process each element coefficient-wise
+        // TODO: handle data passed with existing strides
+        Eigen::Map<Derived const, 0, decltype(periodStride)> map(chunk.derived().data() + chunkPos, binLen, periods, periodStride);
+        bins[bin].add(map);
+      }
+      else
+      {
+        break;
+      }
+
+      chunkPos += binLen;
+    } while (bin != endBin);
 
     // 3. fill last partial bin from start, if needed
+    bins[chunkTailBin].add(chunk.tail(chunk.size() - chunkTailPos));
+
+    // find the extreme bins;
+    Scalar minVariance = bins[0].variance();
+    Scalar maxVariance = bins[0].variance();
+    minBin = maxBin = 0;
+    for (size_t i = 1; i < bins.size(); ++ i)
+    {
+      auto variance = bins[i].variance();
+      if (variance < minVariance)
+      {
+        minVariance = variance;
+        minBin = i;
+      }
+      if (variance > maxVariance)
+      {
+        maxVariance = variance;
+        maxBin = i;
+      }
+    }
   }
+
+  Scalar significance() const
+  {
+    return StatsDistributionSampling<Scalar, STATS_STANDARD_DEVIATION>(bins[minBin].fakeInfinitePopulation(), bins[minBin].size()).deviationSignificance(bins[maxBin]);
+  }
+
+#if 0
+  // TODO oldNEXT: these overallError, overallRange functions are not quite right
+  // as our signal _is noise_, we want to use the sampling distribution of the
+  // standard error, using the maxima.
+  Scalar overallError() const
+  {
+    return bins[0].groupError(bins);
+  }
+
+  // ooookay what did I mean by sampling distribution of the standard error?
+  // well, our extreme bins (the ones with the mean magnitudes most far apart --
+  // also the ones with the standard deviations most far apart) contain specifically
+  // different sets of noise.
+  // the minimum bin contains only the background noise.
+  // the maximum bin contains the background noise + the signal noise.
+  // The are roughly random selections from those two distributions.
+  // I apparently would like to track the shapes of the distributions -- but for now
+  // let's assume they're both gaussian.
+  //
+  // My stats accumulators are taking the raw samples from the two distributions.
+  // So I don't expect the standard deviation of either of them to provide a sampling
+  // distribution ....  do I?  why was I talking about a sampling distribution?
+  //
+  // hmm I think it has to do with the error of the masurement itself.  Our measure-
+  // ment is one of the standard error and the mean, so if we report the error in our
+  // measurement, then we'd report that error based on the sampling distribution.
+  // Our measurement of the standard error and the mean is a sample from those
+  // sampling distributions.
+  //
+  // So, I guess the question is -- what is reported for the range? the error or the
+  // mean difference? and then, use the sampling distriution error to determine
+  // the error of that meaurement.
+  //
+  // Our first approach is to take raw samples, so the data is signed and we expect
+  // the mean to be zero.  The approach of magnitudes would give a nonzero mean.
+  // It's notable that this magnitude mean is probably directly related to the
+  // standard deviation, if the distribution is normal.
+  //
+  // Both distributions are supposed to have a mean of zero.
+  // One distribution has a larger standard deviation, and its stddev is combined
+  // from the other distribution.
+  //
+  // Our range I imagine would be what?  I guess it would be magnitude of the
+  // standard devation of the added signal!  So we'll want to subtract somehow
+  // the error from the background noise.
+  //
+  // var_sum = (n1 * var1 + n2 * var2) / (n1 + n2)
+  //
+  // // for dist 2, we have var_sum, and n2
+  // // for dist 1, we have var, and n1
+  // //
+  // // that's a litle confusing and might be wrong, let's hash it out.
+  // // yeah i think this was wrong
+  //
+  // dist_1: n_1 recordings of background noise (pop_1)
+  // dist_3: n_3 recordings of pop_1 + pop_2
+  //
+  // var_samp1 is measured
+  // var_3 should be var_pop1 + var_pop2, because it is a simple sum
+  // (var_sum = (1 * var1 + 1 * var2) / (1 + 1)
+  //
+  // var_pop3 = var_pop1 + var_pop2
+  //
+  // we want var_pop2 = var_pop3 - var_pop1
+  //
+  // we don't have these population variances, though
+  // we have sample variances ...
+  // var_samp3 used n3 samples to sample the sampling distribution of the variance
+  // var_samp1 used n1 samples to sample the sampling distribution of its variance
+  //
+  // these sampling distributions each have a variance of their own.
+  //
+  // the final measurement var2 = var_samp3 - var_samp1 is a sampling distribution
+  // with a variance equal to the combined variance of the two that made it up.
+  // var_sum = (var_samp1 * n1 + var_samp3 * n3) / (n1 + n3)
+  //
+  // that's the error we can return =)
+  //
+  // Okay, it actually works best with the current layout to make this general for
+  // arbitrary kinds of distributions.  What am I doing here more generally?
+  //
+  // the range is the magnitude of the underlying distribution.
+  // This is found by solving for the sum of two samples from two different distributions.
+  // So what I need for a general function is the std deviation of the difference of two
+  // samples from two distributions.
+  // It might make sense to allow some simple arithmetic operations on distributions /
+  // stats accumulators.  Thse operations would predict the distributions if the
+  // provided operators were performed on samples from the distributions.
+  //
+  // I can also provide sampling distribution stats on the distributions themselves I
+  // think ...
+  //
+  // The operator we'll need here is subtraction.  It could also be modeled as
+  // multiplication by a scalar and addition.  That's a little more general.
+
+  Scalar overallRange() const
+  {
+
+    Scalar min = Eigen::NumTraits<Scalar>::infinity();
+    Scalar max = -min;
+    for (auto const & accum : bins)
+    {
+      auto v = accum.average();
+      if (v < min)
+      {
+        min = v;
+      }
+      if (v > max)
+      {
+        max = v;
+      }
+    }
+    return max - min;
+  }
+#endif
 
 private:
   size_t offset;
-  StatsAccumulator bins[NUM_BINS];
+  std::array<StatsAccumulator, NUM_BINS> bins;
   size_t period;
   Eigen::OuterStride<Eigen::Dynamic> periodStride;
+
+  size_t minBin;
+  size_t maxBin;
 
   size_t binStart(size_t bin)
   {
     size_t inter = bin * period;
-    return inter / NUM_BINS + (inter % numbins ? 1 : 0);
+    return inter / NUM_BINS + (inter % NUM_BINS ? 1 : 0);
   }
 };
 
 // given some incoming data, accumulates data % a given period, passing it
 // through a provided metric
+// TODO: this makes a stats accumulator for each sample of the wave !!!!!
+//       just a single mean is all that is needed (for much better memory use); just one statsaccumulator can be kept for whole wave.
 template <typename StatsAccumulator>
 class PeriodModelAccumulatorPreciseSignal
 {
@@ -322,7 +467,7 @@ public:
     Scalar max = -min;
     for (auto const & accum : periodWave)
     {
-      auto v = accum.expectedValue();
+      auto v = accum.average();
       if (v < min)
       {
         min = v;
@@ -345,8 +490,8 @@ public:
     errors.derived().resize(periodWave.size());
     for (size_t i = 0; i < periodWave.size(); ++ i)
     {
-      values[i] = periodWave[i].expectedValue();
-      errors[i] = periodWave[i].error();
+      values[i] = periodWave[i].average();
+      errors[i] = periodWave[i].errorInAverage();
     }
   }
 
@@ -376,48 +521,38 @@ public:
       std::cout << "Emplacing test period " << i << " of " << maxPeriod << " ..." << std::endl;
       periodMetrics.emplace_back(i, config);
     }
-    std::cout << "Constructed."
+    std::cout << "Constructed." << std::endl;
   }
 
-  // TODO: <==========================
-  // this finds the best error
-  // but with some changes, it could output a statistical metric regarding
-  // the likelihood that the measured signal is not noise.
-  //
-  // resolving that would also resolve the need to pass a weird config object to the constructor
   template <typename Derived>
   void add(Eigen::PlainObjectBase<Derived> const & chunk)
   {
-    Scalar bestRatio = 0;
+    Scalar bestSignificance = 0;
 
     for (size_t pidx = 0; pidx < periodMetrics.size(); ++ pidx)
     {
       auto & pa = periodMetrics[pidx];
       pa.add(chunk);
-      Scalar error = pa.overallError();
-      Scalar range = pa.overallRange();
-      Scalar ratio = range / error;
-      if (ratio > bestRatio)
+      Scalar significance = pa.significance();
+      std::cout << "period #" << pidx << " (" << pidx + minPeriod << "): " << significance << std::endl;
+      if (significance > bestSignificance)
       {
-        bestRatio = ratio;
+        bestSignificance = significance;
         _bestPeriod = pidx + minPeriod;
-        _bestError = error;
-        _bestRange = range;
+        _bestSignificance = significance;
       }
     }
   }
 
   Scalar bestPeriod() { return _bestPeriod; }
-  Scalar bestError() { return _bestError; }
-  Scalar bestRange() { return _bestRange; }
+  Scalar bestSignificance() { return _bestSignificance; }
 
 private:
   size_t minPeriod;
   std::vector<PeriodModelAccumulator> periodMetrics;
 
   size_t _bestPeriod;
-  Scalar _bestError;
-  Scalar _bestRange;
+  Scalar _bestSignificance;
 };
 
 // status:
@@ -810,31 +945,52 @@ private:
 //        -> this means the code that chooses to accumulate each sample of each period choice [and use their error and range?]
 //    B. take current work and store as a PeriodModel that stores every sample for the wave and assumes an underlying repeating signal
 //    C. make a PeriodModel for square waves
-//      - [ ] make 4 stats bins
-//        - [ ] make a todo to make another class that uses a binary tree for adaptive subsampling
-//      - [ ] fill stats bins with incoming data and track std dev
+//      - [X] make 4 stats bins
+//        - [X] make a todo to make another class that uses a binary tree for adaptive subsampling
+//      - [X] fill stats bins with incoming data and track std dev
 //            -> I'll probably drop the q data and use real-valued data for now
-//            - [ ] make a todo to try using magnitude of complex variance, and to try twice as much data with i & q both considered real.  we'll want to see if the approaches using more data have accurate stats, I guess
+//            - [X] make a todo to try using magnitude of complex variance, and to try twice as much data with i & q both considered real.  we'll want to see if the approaches using more data have accurate stats, I guess
 //                -> this could also be measured by looking at all 3 metrics on the raw data.  we'll want the one that is most extreme and most reliable, I guess.
-//      - [ ] maxima is taken with std dev of results (the 2 opposite bins that are most extreme are picked)
+//      - [/] maxima is taken with std dev of results (the 2 opposite bins that are most extreme are picked)
 //            -> this gives range
 //      - [ ] sampling distribution of the standard error can be used to determine standard error output, using the maxima
 // ==============================================================================================================================================================================
+
+template <typename T>
+static constexpr T erfinv(T x)
+{
+  using Eigen::numext::sqrt;
+  using Eigen::numext::log;
+
+  // from https://stackoverflow.com/a/40260471
+  x = (1 - x)*(1 + x);        // x = 1 - x*x;
+  T lnx = log(x);
+  
+  T tt1 = 2/(EIGEN_PI*0.147) + 0.5f * lnx;
+  T tt2 = 1/(0.147) * lnx;
+  
+  return sqrt(-tt1 + sqrt(tt1*tt1 - tt2));
+}
+
 
 int main()
 {
   RtlSdrIQDump data(std::cin);
 
-  PeriodFinder<PeriodModelAccumulatorPreciseSignal<StatsAccumulatorGaussianPct<Scalar>>> periodFinder(2048000 * 40 - 1, 2048000 * 40 + 1, StatsAccumulatorGaussianPct<Scalar>(95.0));
+  PeriodFinder<PeriodModelAccumulatorNoiscillate<StatsAccumulatorHistogram<Scalar>>> periodFinder(2048000 * 40 - 1, 2048000 * 40 + 1, StatsAccumulatorHistogram<Scalar>(data.epsilon()));
 
   HeapVector<Complex> buffer(2048000 * 2);
   while (buffer.size())
   {
     data.readMany(buffer);
-    auto mag = buffer.array().abs().eval();
 
-    periodFinder.add(mag);
-    std::cout << "Best period so far: " << periodFinder.bestPeriod() << " Hz (" << periodFinder.bestRange() << " +-" << periodFinder.bestError() << ")" << std::endl;
+    // TODO: try using magnitude fo complex variance, and try twice as much data with i & q both considered real.  which of the 3 approaches has the most accurate stats?
+    // could also look at all 3 metrics on the raw data: the best one is the most extreme and the most reliable
+    auto preprocessed = buffer.array().real().eval();
+    //auto mag = buffer.array().abs().eval();
+
+    periodFinder.add(preprocessed);
+    std::cout << "Best significance so far: " << periodFinder.bestPeriod() << " (" << periodFinder.bestSignificance() << " %)" << std::endl;
   }
   return 0;
 }

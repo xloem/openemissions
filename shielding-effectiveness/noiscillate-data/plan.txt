@@ -1,0 +1,11 @@
+My reference material has a definition of the sampling standard deviation
+that results in imaginary numbers when the samples are mostly between zero and
+one.  I need to learn more stats and correctly use the t distribution and
+chi-squared distributions.
+
+The plan is to to upgrade to use boost::math and boost::accumulator, and
+to change all the code to be built around these libraries.  The will be robust
+replacements for my accumulators and distribution methods.  I will still need
+wrapping classes to handle the meaning of the distribution methods, and converting
+the convolution will be a little confusing because the boost accumulators create
+histograms in a different way.
