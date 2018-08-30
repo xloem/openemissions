@@ -1,0 +1,41 @@
+
+Let's explore the idea of aggregating/unifying the period-handing.
+
+I've broken it up into a number of checks running side-by-side.
+Each one has a statistical accumulator -- 4, really.
+Each statistical accumulator is neighbored by a statistical accumulator that it is out of phase by one sample.
+
+At the start, all the accumulators are in phase, but because their periods are off by units, they grow distinct.
+However, at all times all the periods will overlap in some way -- it is just different accumulators that overlap.
+
+If there were just a few accumulators, it would be reasonable to think of 'blocks' that one could aggregate and distribute to those that need them;
+however, the accumulator periods are dense.  Each sample loses one accumulator and goes somewhere else.
+
+I might imagine a number space, a hueg matrix, that holds the sums the accumulators are tracking.
+
+p0   0    1    2    3
+p1    0    1    2    3
+p2     0    1    2    3
+p3      0    1    2    3
+
+It's notable that n < N; there are far fewer periods than period-length.  It's also notable that over time things will grow very out of phase.
+
+So, there are two extreme cases - the starts of the periods are offset by 0-4 samples, and the starts of the periods are offset by periodlength / 16
+Most of the time they will be offset by a value > 1, so it's meaningful to produce these aggregate quantities.
+
+It seems I'd like some special accumulator that keeps track of who to distribute accumulations to.
+
+I have p * 4 different buckets of accumulation, that will cover such and such offset ranges.
+I'm getting data on an offset range.  For each subrange, I want to calculate the values for that range once, and have each accumulator gain by it.
+
+It would be nice to check a huge ton of periods.
+It's also notable that this might be easier done with a fourier transform or somesuch.
+But it's also notable that I'm going pretty slowly with only 5 periods, and I'll need more than 5 to precisely narrow down a length.
+
+- downsampling
+- random selection
+- algorithm optimization / profiling
+- gpu acceleration
+- faster algorithm
+
+I guess it's just work to move forward on.  Maybe clean my code up a little optionally, and try a faster algorithm for a bit, see if it's effective.

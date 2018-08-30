@@ -236,6 +236,7 @@ private:
   }
 
   template <typename Distribution>
+  [[deprecated("still needlessly assuming non-normal distributions are normal")]]
   static Scalar getVariance(Distribution const & sampled, size_t sampleSize)
   {
     switch (STATISTIC)
@@ -258,8 +259,11 @@ private:
         //  (sum4 - sum2*sum2/N) / (4 N sum2)
         //  (sum4/sum2 - sum2/N) / (4 N)
         //  (sum4/(sum2 * N) - sum2) / 4
-        auto derived = sampled.derived();
-        return ((derived.sum4() / derived.sum2() * sampleSize) - derived.sum2()) / 4;
+        //auto derived = sampled.derived();
+        //return ((derived.sum4() / derived.sum2() * sampleSize) - derived.sum2()) / 4;
+        //throw std::logic_error("must assume the population is normal for now; formula from schaum's outline doesn't work");
+        // TODO: REMOVE THIS LINE AND THE DEPRECATION ATTRIBUTE
+        return sampled.variance() / (2 * sampleSize);
       }
     default:
       throw std::logic_error("unimplemented");
@@ -343,7 +347,7 @@ public:
     growToEnd(bins.size());
     
     // 2. fft both
-    Eigen::FFT<Scalar> fft(Eigen::default_fft_impl<Scalar>(), Eigen::FFT<Scalar>::Unscaled | Eigen::FFT<Scalar>::HalfSpectrum);
+    Eigen::FFT<Scalar> fft(Eigen::default_fft_impl<Scalar>(), {Eigen::FFT<Scalar>::Unscaled | Eigen::FFT<Scalar>::HalfSpectrum});
 
     HeapVector<typename Eigen::FFT<Scalar>::Complex> fftResult, fftOther;
     StatsAccumulatorHistogram<T, OPTIONS2> ret(binWidth, binDensity, binStart);

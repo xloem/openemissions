@@ -9,3 +9,22 @@ replacements for my accumulators and distribution methods.  I will still need
 wrapping classes to handle the meaning of the distribution methods, and converting
 the convolution will be a little confusing because the boost accumulators create
 histograms in a different way.
+
+docs are somewhere in
+file:///home/user/QubesIncoming/sys-net/boost1.62/boost_1_62_0/
+
+NOTE: I can't just replug my data with the formulas from boost because my approach
+was to approximate the chi-squared distribution as normal, and I haven't found
+another formula for that other than the one that was apparently wrong.
+Instead I'll need to change the architecture to separate it out somehow rather
+than re-use the normal functions.  The way that makes the most sense would be
+to parameterize the distribution used by the metrics-based distribution class.
+This might be a happy-medium between switching to boost completely and patching
+in a fix.
+
+OKAY: I quickly approximated the data as normal and continued without rewriting everything.
+The issue now is speed.
+Approaches:
+  - find the slow inner loops and make them faster
+  - handle periods in an aggregate manner, as adjacent periods would be friendly with the accumulator concept; they're just a few samples different
+  - move code to the GPU

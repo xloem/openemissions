@@ -16,6 +16,8 @@ public:
   {
     std::complex<uint8_t> val;
     stream.read(reinterpret_cast<char*>(&val), 2);
+    if (stream.eof())
+      throw std::runtime_error("EOF");
     return (Complex(val.real(), val.imag()) - Complex(127.5, 127.5)) / 127.5;
   }
 
@@ -210,47 +212,53 @@ public:
     {
       bins[bin].add(chunk);
       offset = (offset + chunk.size()) % period;
-      return;
+      std::cout << offset << " / " << period << std::endl;
     }
-    bins[bin].add(chunk.head(chunkPos));
-
-    // 2. use maps and strides to fill a mess of bins
-    
-    size_t endBin = bin;
-    size_t chunkTailPos = 0;
-    size_t chunkTailBin;
-    do {
-      offset = tail % period;
-      bin = (bin + 1) % NUM_BINS;
-
-      tail = binStart(bin + 1);
-      size_t binLen = tail - offset;
-      size_t periods = (chunk.size() - chunkPos) / period;
-
-      size_t possibleEnd = chunkPos + periods * period;
-      if (possibleEnd > chunkTailPos)
+    else
+    {
+      bins[bin].add(chunk.head(chunkPos));
+  
+      // 2. use maps and strides to fill a mess of bins
+      
+      size_t endBin = bin;
+      size_t chunkTailPos = 0;
+      size_t chunkTailBin;
+      do {
+        offset = tail % period;
+        bin = (bin + 1) % NUM_BINS;
+  
+        tail = binStart(bin + 1);
+        size_t binLen = tail - offset;
+        size_t periods = (chunk.size() - chunkPos) / period;
+  
+        size_t possibleEnd = chunkPos + periods * period;
+        if (possibleEnd > chunkTailPos)
+        {
+          chunkTailPos = possibleEnd;
+          chunkTailBin = bin;
+        }
+  
+        if (periods > 0)
+        {
+          // note that this is a rectangular matrix, and statsaccumulator is expected to still process each element coefficient-wise
+          // TODO: handle data passed with existing strides
+          Eigen::Map<Eigen::Matrix<typename Derived::Scalar, Eigen::Dynamic, Eigen::Dynamic> const, 0, decltype(periodStride)> map(chunk.derived().data() + chunkPos, binLen, periods, periodStride);
+          bins[bin].add(map);
+        }
+        else
+        {
+          break;
+        }
+  
+        chunkPos += binLen;
+      } while (bin != endBin);
+  
+      // 3. fill last partial bin from start, if needed
+      if (chunk.size() > chunkTailPos)
       {
-        chunkTailPos = possibleEnd;
-        chunkTailBin = bin;
+        bins[chunkTailBin].add(chunk.tail(chunk.size() - chunkTailPos));
       }
-
-      if (periods > 0)
-      {
-        // note that this is a rectangular matrix, and statsaccumulator is expected to still process each element coefficient-wise
-        // TODO: handle data passed with existing strides
-        Eigen::Map<Derived const, 0, decltype(periodStride)> map(chunk.derived().data() + chunkPos, binLen, periods, periodStride);
-        bins[bin].add(map);
-      }
-      else
-      {
-        break;
-      }
-
-      chunkPos += binLen;
-    } while (bin != endBin);
-
-    // 3. fill last partial bin from start, if needed
-    bins[chunkTailBin].add(chunk.tail(chunk.size() - chunkTailPos));
+    }
 
     // find the extreme bins;
     Scalar minVariance = bins[0].variance();
@@ -270,6 +278,8 @@ public:
         maxBin = i;
       }
     }
+    //std::cout << period << " min " << minBin << " sigma^2 " << minVariance << std::endl;
+    //std::cout << period << " max " << maxBin << " sigma^2 " << maxVariance << std::endl;
   }
 
   Scalar significance() const
@@ -505,20 +515,19 @@ private:
 
 // PeriodFinder is a class that takes an incrementally-provided set of samples, and a range of possible periods, and identifies the strongest period in the data with that range
 template <typename PeriodModelAccumulator>
-class PeriodFinder
+class PeriodFinderAccumulateAllInteger
 {
   // accepts buffers of samples
   // finds a periodic signal in them
 public:
   using Scalar = typename PeriodModelAccumulator::Scalar;
 
-  PeriodFinder(size_t minPeriod, size_t maxPeriod, typename PeriodModelAccumulator::Detail const & config)
-  : minPeriod(minPeriod)
+  PeriodFinderAccumulateAllInteger(size_t minPeriod, size_t maxPeriod, typename PeriodModelAccumulator::Detail const & config)
+  : minPeriod(minPeriod), _minPeriodsRead(0), _minPeriodsRemainder(0)
   {
     periodMetrics.reserve(maxPeriod - minPeriod);
     for (size_t i = minPeriod; i <= maxPeriod; ++ i)
     {
-      std::cout << "Emplacing test period " << i << " of " << maxPeriod << " ..." << std::endl;
       periodMetrics.emplace_back(i, config);
     }
     std::cout << "Constructed." << std::endl;
@@ -527,24 +536,30 @@ public:
   template <typename Derived>
   void add(Eigen::PlainObjectBase<Derived> const & chunk)
   {
-    Scalar bestSignificance = 0;
+    Scalar bestSignificance = 1.0;
 
     for (size_t pidx = 0; pidx < periodMetrics.size(); ++ pidx)
     {
       auto & pa = periodMetrics[pidx];
       pa.add(chunk);
       Scalar significance = pa.significance();
-      std::cout << "period #" << pidx << " (" << pidx + minPeriod << "): " << significance << std::endl;
-      if (significance > bestSignificance)
+      std::cout << "period #" << pidx << " (" << pidx + minPeriod << "): " << significance*100 << std::endl;
+      if (significance < bestSignificance)
       {
         bestSignificance = significance;
         _bestPeriod = pidx + minPeriod;
         _bestSignificance = significance;
       }
     }
+
+    _minPeriodsRemainder += chunk.size();
+    _minPeriodsRead += _minPeriodsRemainder / minPeriod;
+    _minPeriodsRemainder %= minPeriod;
   }
 
-  Scalar bestPeriod() { return _bestPeriod; }
+  size_t periodsRead() { return _minPeriodsRead; }
+
+  size_t bestPeriod() { return _bestPeriod; }
   Scalar bestSignificance() { return _bestSignificance; }
 
 private:
@@ -553,6 +568,9 @@ private:
 
   size_t _bestPeriod;
   Scalar _bestSignificance;
+
+  size_t _minPeriodsRead;
+  size_t _minPeriodsRemainder;
 };
 
 // status:
@@ -956,6 +974,90 @@ private:
 //      - [ ] sampling distribution of the standard error can be used to determine standard error output, using the maxima
 // ==============================================================================================================================================================================
 
+#include <unsupported/Eigen/FFT>
+
+template <typename T>
+class PeriodFinderFFT
+{
+public:
+  using Scalar = T;
+
+  PeriodFinderFFT(size_t bufferSize, size_t downSampling = 1)
+  : buffer(bufferSize),
+    fftAccum(decltype(fftAccum)::Zero(bufferSize / 2)),
+    offset(0),
+    downSampling(downSampling),
+    buffersRead(0)
+  { }
+
+  template <typename Derived>
+  void add(Eigen::PlainObjectBase<Derived> const & chunk)
+  {
+    if (downSampling != 1)
+    {
+      throw std::logic_error("downSampling != 1 unimplemented");
+    }
+
+    static constexpr typename Eigen::FFT<Scalar>::Flag fftFlags = static_cast<typename Eigen::FFT<Scalar>::Flag>(Eigen::FFT<Scalar>::Unscaled | Eigen::FFT<Scalar>::HalfSpectrum);
+    Eigen::FFT<Scalar> fft(Eigen::default_fft_impl<Scalar>(), fftFlags);
+
+    // add chunk to buffer
+    size_t amountToFillBuffer = buffer.size() - offset;
+    if (chunk.size() < amountToFillBuffer)
+    {
+      buffer.segment(offset, chunk.size()) = chunk;
+      offset += chunk.size();
+      return;
+    }
+    buffer.segment(offset, amountToFillBuffer) = chunk.head(amountToFillBuffer);
+    
+    size_t chunkOffset = amountToFillBuffer;
+    size_t amountRemaining;
+
+    while (true)
+    {
+      // fft buffer if filled
+      fft.fwd(fftCurrentResult, buffer);
+  
+      // (take abs of result and sum into accumulation)
+      fftAccum.array() += fftCurrentResult.array().tail(fftAccum.size()).abs();
+
+      ++ buffersRead;
+
+      amountRemaining = chunk.size() - chunkOffset;
+      if (amountRemaining < buffer.size())
+      {
+        break;
+      }
+
+      buffer = chunk.segment(chunkOffset, buffer.size());
+      chunkOffset += buffer.size();
+    }
+
+    // add last bit of chunk to buffer
+    buffer.head(amountRemaining) = chunk.tail(amountRemaining);
+    offset = amountRemaining;
+
+    // calculate result
+    maxVal = fftAccum.maxCoeff(&maxIdx);
+  }
+  
+  size_t periodsRead() { return buffersRead; }
+  size_t bestPeriod() { return maxIdx; }
+  Scalar bestSignificance() { return maxVal; }
+
+private:
+  HeapVector<Scalar> buffer;
+  HeapVector<typename Eigen::FFT<Scalar>::Complex> fftCurrentResult;
+  HeapVector<typename Eigen::FFT<Scalar>::Scalar> fftAccum;
+  size_t offset;
+  size_t downSampling;
+  size_t buffersRead;
+
+  Scalar maxVal;
+  size_t maxIdx;
+};
+
 template <typename T>
 static constexpr T erfinv(T x)
 {
@@ -972,25 +1074,42 @@ static constexpr T erfinv(T x)
   return sqrt(-tt1 + sqrt(tt1*tt1 - tt2));
 }
 
+// a useful structure for looking at this data would be downsampling it as a
+// distribution.
+// consider chunks of at least 2 samples and calculate the mean and std dev,
+// and plot them separately.  consider also the local std dev if mean is taken as
+// the whole signal mean (or eg a moving average)
+
+// downsampling could be done by reshaping into a matrix and taking colwise/rowise
+// downsample operation !
 
 int main()
 {
   RtlSdrIQDump data(std::cin);
 
-  PeriodFinder<PeriodModelAccumulatorNoiscillate<StatsAccumulatorHistogram<Scalar>>> periodFinder(2048000 * 40 - 1, 2048000 * 40 + 1, StatsAccumulatorHistogram<Scalar>(data.epsilon()));
+  //PeriodFinderAccumulateAllInteger<PeriodModelAccumulatorNoiscillate<StatsAccumulatorHistogram<Scalar>>> periodFinder(2048000 / 80, 2048000 / 20, StatsAccumulatorHistogram<Scalar>(data.epsilon()));
+  PeriodFinderFFT<Scalar> periodFinder(2048000 / 20, 1);
 
-  HeapVector<Complex> buffer(2048000 * 2);
-  while (buffer.size())
+  HeapVector<Complex> buffer(2048000 / 2);
+  size_t lastPeriods = 0;
+  while (true)
   {
     data.readMany(buffer);
 
+    if (!buffer.size()) break;
+
     // TODO: try using magnitude fo complex variance, and try twice as much data with i & q both considered real.  which of the 3 approaches has the most accurate stats?
     // could also look at all 3 metrics on the raw data: the best one is the most extreme and the most reliable
-    auto preprocessed = buffer.array().real().eval();
+    //auto preprocessed = buffer.array().real().eval();
     //auto mag = buffer.array().abs().eval();
+    auto preprocessed = buffer.array().real().abs().eval();
 
     periodFinder.add(preprocessed);
-    std::cout << "Best significance so far: " << periodFinder.bestPeriod() << " (" << periodFinder.bestSignificance() << " %)" << std::endl;
+    if (lastPeriods != periodFinder.periodsRead()) {
+      std::cout << "Best significance so far: " << periodFinder.bestPeriod() << " (" << periodFinder.bestSignificance()*100 << " %)" << std::endl;
+      lastPeriods = periodFinder.periodsRead();
+    }
   }
+  std::cout << "Best significance: " << periodFinder.bestPeriod() << " (" << periodFinder.bestSignificance()*100 << " %)" << std::endl;
   return 0;
 }
