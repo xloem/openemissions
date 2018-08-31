@@ -1,0 +1,14 @@
+rtl_sdr -f 1000000000 -g 43 -n 122880000 2018-08-31_noiscillate-10hz-silent-close.iq
+Found 1 device(s):
+  0:  Realtek, RTL2838UHIDIR, SN: 00000003
+
+Using device 0: Generic RTL2832U OEM
+Found Rafael Micro R820T tuner
+[R82XX] PLL not locked!
+Sampling at 2048000 S/s.
+Tuned to 1000000000 Hz.
+Tuner gain set to 43.40 dB.
+Reading samples in async mode...
+Allocating 15 zero-copy buffers
+
+User cancel, exiting...
