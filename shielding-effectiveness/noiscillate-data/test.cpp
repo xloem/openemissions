@@ -1,44 +1,10 @@
 #include <iostream>
-#include <vector>
 
 #include "types.hpp"
 
 #include "stats.hpp"
 
-class RtlSdrIQDump
-{
-public:
-  RtlSdrIQDump(std::istream & stream)
-  : stream(stream)
-  { }
-  
-  Complex readOne()
-  {
-    std::complex<uint8_t> val;
-    stream.read(reinterpret_cast<char*>(&val), 2);
-    if (stream.eof())
-      throw std::runtime_error("EOF");
-    return (Complex(val.real(), val.imag()) - Complex(127.5, 127.5)) / 127.5;
-  }
-
-  template <typename Derived>
-  void readMany(Eigen::MatrixBase<Derived> const & _vec)
-  {
-    std::vector<uint8_t> val(2 * _vec.size());
-    stream.read(reinterpret_cast<char*>(&val[0]), val.size());
-    Eigen::Map<Eigen::Array<uint8_t, 2, Eigen::Dynamic>> eigenRawData(&val[0], 2, stream.gcount() / 2);
-    auto eigenScalarData = eigenRawData.cast<Scalar>() / 127.5 - 1.0;
-    Eigen::MatrixBase<Derived> & vec = const_cast<Eigen::MatrixBase<Derived> &>(_vec);
-    vec.derived().resize(eigenScalarData.cols());
-    vec.real() = eigenScalarData.row(0);
-    vec.imag() = eigenScalarData.row(1);
-  }
-
-  static constexpr Scalar epsilon() { return 1 / 127.5; }
-
-private:
-  std::istream & stream;
-};
+#include "rtlsdriqdump.hpp"
 
 /*
 template <typename T>
@@ -976,18 +942,40 @@ private:
 
 #include <unsupported/Eigen/FFT>
 
+// okay, fft takes a min and max period I guess?
+// 'period' is in # samples
+//
+// fft has # samples coming in.
+// at DC, that's component where period length = sample size
+// at far right, that's component where period length = 2, I think
+// in between, the delineations I believe are in frequencies not in periods,
+// so invertedly
+//
+// 0 hz at far left
+// [SR] hz at far right
+//      periods / sec
+//      instead
+//      periods / window
+// 0 p/w at left
+// count or count/2 p/w at right
+// basically we can try to assume the p/w are the index into the fft result
+//
+// so I have a periodsize, the p/w are going to be periodsize / windowsize
+
 template <typename T>
 class PeriodFinderFFT
 {
 public:
   using Scalar = T;
 
-  PeriodFinderFFT(size_t bufferSize, size_t downSampling = 1)
-  : buffer(bufferSize),
-    fftAccum(decltype(fftAccum)::Zero(bufferSize / 2)),
+  PeriodFinderFFT(size_t minPeriod, size_t maxPeriod, size_t bufferSize, size_t downSampling = 1)
+  : _minPeriodsPerBuffer(bufferSize / maxPeriod),
+    buffer(bufferSize),
+    //fftAccum(decltype(fftAccum)::Zero(bufferSize / minPeriod - _minPeriodsPerBuffer)),
     offset(0),
     downSampling(downSampling),
-    buffersRead(0)
+    buffersRead(0),
+    foregroundDists(bufferSize / minPeriod - _minPeriodsPerBuffer)
   { }
 
   template <typename Derived>
@@ -1019,8 +1007,14 @@ public:
       // fft buffer if filled
       fft.fwd(fftCurrentResult, buffer);
   
-      // (take abs of result and sum into accumulation)
-      fftAccum.array() += fftCurrentResult.array().tail(fftAccum.size()).abs();
+      // take abs of result and sum into accumulations
+      // this could be sped up by allow dist accumulators to handle matrices of parallel distributions: it would just be a vector of sums
+      auto magData = fftCurrentResult.array().segment(_minPeriodsPerBuffer, foregroundDists.size()).abs().eval();
+      overallInterestDist.add(magData);
+      for (size_t i = 0; i < foregroundDists.size(); ++ i)
+      {
+        foregroundDists[i].add(magData[i]);
+      }
 
       ++ buffersRead;
 
@@ -1039,20 +1033,60 @@ public:
     offset = amountRemaining;
 
     // calculate result
-    maxVal = fftAccum.maxCoeff(&maxIdx);
+    maxVal = 0;
+    for (size_t i = 0; i < foregroundDists.size(); ++ i)
+    {
+      if (foregroundDists[i].mean() > maxVal)
+      {
+        maxVal = foregroundDists[i].mean();
+        maxIdx = i;
+      }
+    }
   }
   
-  size_t periodsRead() { return buffersRead; }
-  size_t bestPeriod() { return maxIdx; }
-  Scalar bestSignificance() { return maxVal; }
+  size_t periodsRead() { return buffersRead * _minPeriodsPerBuffer; }
+  size_t bestPeriod() { return buffer.size() / (maxIdx + _minPeriodsPerBuffer); }
+  /*
+   * how will we really get the best significance?
+   * probably consider the non-best periods samples from some kind of population
+   * look at the significance of our good period compared to those of the population
+   *        ideally remove harmonics; so i guess a simple solution might be DC to pop / 2 + 1 wrt period
+   *
+   * okay, we have representative samples
+   * we have abnormal sample ... really I guess it's many samples, huh
+   * seems reasonable to consider it mean * n since it's a sum
+   * 
+   */
+  Scalar bestSignificance() {
+
+    decltype(overallInterestDist) backgroundDist = overallInterestDist;
+    backgroundDist.remove(foregroundDists[maxIdx]);
+    
+    if (maxIdx > 1)
+    {
+      backgroundDist.remove(foregroundDists[maxIdx - 1]);
+    }
+    if (maxIdx < foregroundDists.size() - 2)
+    {
+      backgroundDist.remove(foregroundDists[maxIdx + 1]);
+    }
+
+    return StatsDistributionSampling<Scalar, STATS_MEAN>(backgroundDist.fakeInfinitePopulation(), foregroundDists[maxIdx].size()).deviationSignificance(foregroundDists[maxIdx]);
+  }
+
+  //HeapVector<typename Eigen::FFT<Scalar>::Scalar> const & significances() { return fftAccum; }
 
 private:
+  size_t _minPeriodsPerBuffer;
   HeapVector<Scalar> buffer;
   HeapVector<typename Eigen::FFT<Scalar>::Complex> fftCurrentResult;
-  HeapVector<typename Eigen::FFT<Scalar>::Scalar> fftAccum;
+  //HeapVector<typename Eigen::FFT<Scalar>::Scalar> fftAccum;
   size_t offset;
   size_t downSampling;
   size_t buffersRead;
+
+  StatsAccumulatorNormal<Scalar> overallInterestDist;
+  std::vector<StatsAccumulatorNormal<Scalar>> foregroundDists;
 
   Scalar maxVal;
   size_t maxIdx;
@@ -1087,10 +1121,10 @@ int main()
 {
   RtlSdrIQDump data(std::cin);
 
-  //PeriodFinderAccumulateAllInteger<PeriodModelAccumulatorNoiscillate<StatsAccumulatorHistogram<Scalar>>> periodFinder(2048000 / 80, 2048000 / 20, StatsAccumulatorHistogram<Scalar>(data.epsilon()));
-  PeriodFinderFFT<Scalar> periodFinder(2048000 / 20, 1);
+  //PeriodFinderAccumulateAllInteger<PeriodModelAccumulatorNoiscillate<StatsAccumulatorHistogram<Scalar>>> periodFinder(2048000 / 80, 2048000 / 30, StatsAccumulatorHistogram<Scalar>(data.epsilon()));
+  PeriodFinderFFT<Scalar> periodFinder(2048000 / 20 - 1, 2048000 / 5 + 1, 2048000 / 5 + 1, 1);
 
-  HeapVector<Complex> buffer(2048000 / 2);
+  HeapVector<Complex> buffer(2048000 / 5 + 1);
   size_t lastPeriods = 0;
   while (true)
   {
@@ -1111,5 +1145,12 @@ int main()
     }
   }
   std::cout << "Best significance: " << periodFinder.bestPeriod() << " (" << periodFinder.bestSignificance()*100 << " %)" << std::endl;
+
+  //auto significances = periodFinder.significances();
+  //for (size_t i = 0; i < significances.size(); ++ i)
+  //{
+  //  std::cout << significances[i] << " ";
+  //}
+  //std::cout << std::endl;
   return 0;
 }

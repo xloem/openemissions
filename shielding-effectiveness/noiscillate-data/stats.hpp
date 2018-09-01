@@ -148,12 +148,12 @@ protected:
     _sum4(sum4)
   { }
 
-  void addSums(size_t count, Scalar sum1/*sum[x]*/, Scalar sum2/*sum[x^2]*/, Scalar sum4/*sum[x^4]*/)
+  void addSums(size_t count, Scalar sum1/*sum[x]*/, Scalar sum2/*sum[x^2]*/, Scalar sum4/*sum[x^4]*/ = 0)
   {
     setSums(_count + count, _sum1 + sum1, _sum2 + sum2, _sum4 + sum4);
   }
 
-  void setSums(size_t count, Scalar sum1/*sum[x]*/, Scalar sum2/*sum[x^2]*/, Scalar sum4/*sum[x^4]*/)
+  void setSums(size_t count, Scalar sum1/*sum[x]*/, Scalar sum2/*sum[x^2]*/, Scalar sum4/*sum[x^4]*/ = 0)
   {
     _count = count;
     _sum1 = sum1;
@@ -181,7 +181,7 @@ private:
   size_t _count;
   Scalar _sum1; // sum[x]
   Scalar _sum2; // sum[x^2]
-  Scalar _sum4; // sum[x^4], only used if not assuming normal
+  Scalar _sum4; // sum[x^4], only used if not assuming normal?
 };
 
 //template <typename T, StatsStatistic STATISTIC, StatsOptions OPTIONS = STATS_INFINITE | STATS_ASSUME_NORMAL>
@@ -282,6 +282,7 @@ public:
   using Scalar = T;
 
   static_assert(!(OPTIONS & STATS_ASSUME_NORMAL), "Use StatsAccumulatorNormal to assume normal.");
+  //static_assert(!(OPTIONS & STATS_INFINITE), "StatsAccumulators cannot be infinite.");
 
   StatsAccumulatorHistogram(Scalar binWidth, Scalar initial = 0)
   : binWidth(binWidth),
@@ -297,11 +298,11 @@ public:
   }
 
   template <typename Derived>
-  void add(Eigen::DenseBase<Derived> const & chunk)
+  void add(Eigen::DenseBase<Derived> const & chunk, size_t repeat = 1)
   {
     using Eigen::numext::floor;
 
-    this->addSums(chunk.size(), chunk.sum(), chunk.derived().matrix().squaredNorm(), (chunk.derived().array().abs2() * chunk.derived().array().abs2()).sum());
+    this->addSums(chunk.size() * repeat, chunk.sum() * repeat, chunk.derived().matrix().squaredNorm() * repeat, (chunk.derived().array().abs2() * chunk.derived().array().abs2()).sum() * repeat);
 
     auto chunkScaled = (chunk.derived().array() * binDensity - binStart).eval();
 
@@ -319,16 +320,17 @@ public:
 
     growToEnd(chunkByIndex.maxCoeff() + 1);
     
-    ++ bins[chunkByIndex.redux([this](T lastIdx, T nextIdx) -> T {
-      ++ bins[lastIdx];
+    bins[chunkByIndex.redux([this, repeat](T lastIdx, T nextIdx) -> T {
+      bins[lastIdx] += repeat;
       return nextIdx;
-    })];
+    })] += repeat;
   }
 
   // Assuming this distribution is made by summing data with another distribution,
-  // estimate a distribution of the unsummed data.
+  // estimate a distribution of the unsummed data (the data summed with the other to
+  // produce this).
   template <StatsOptions OPTIONS2>
-  StatsAccumulatorHistogram<T, OPTIONS2> withRemoved(StatsAccumulatorHistogram<T, OPTIONS2> & componentDistribution)
+  StatsAccumulatorHistogram<T, OPTIONS2> withRemovedFromSum(StatsAccumulatorHistogram<T, OPTIONS2> & componentDistribution)
   {
     if (binWidth != componentDistribution.binWidth)
       throw std::logic_error("distributions have mismatching bin widths");
@@ -451,16 +453,35 @@ public:
   using Scalar = T;
 
   static_assert(OPTIONS & STATS_ASSUME_NORMAL, "StatsAccumulatorNormal must assume normal.");
+  //static_assert(!(OPTIONS & STATS_INFINITE), "StatsAccumulators cannot be infinite.");
 
   StatsAccumulatorNormal()
   { }
 
   template <typename Derived>
-  void add(Eigen::DenseBase<Derived> const & chunk)
+  void add(Eigen::DenseBase<Derived> const & chunk, size_t repeat = 1)
   {
     // note: sum() and squaredNorm() do the right component-wise thing for vectors and for
-    //       matrices: i.e. treating every entry as simple an item to add to the stats
-    addSums(chunk.size(), chunk.sum(), chunk.derived().martix().squaredNorm());
+    //       matrices: i.e. treating every entry as simply an item to add to the stats
+    this->addSums(chunk.size() * repeat, chunk.sum() * repeat, chunk.derived().matrix().squaredNorm() * repeat);
+  }
+
+  void add(Scalar const & value, size_t repeat = 1)
+  {
+    auto square = value * value;
+    this->addSums(repeat, value * repeat, square * repeat);
+  }
+
+  void remove(StatsAccumulatorNormal<T, OPTIONS> const & subgroup)
+  {
+    this->setSums(this->size() - subgroup.size(), this->sum1() - subgroup.sum1(), this->sum2() - subgroup.sum2());
+  }
+
+  [[deprecated("learn statistics and improve library")]]
+  StatsAccumulatorNormal<T, (OPTIONS & ~(STATS_SAMPLE)) | STATS_INFINITE> const &
+  fakeInfinitePopulation() const
+  {
+    return reinterpret_cast<decltype(fakeInfinitePopulation())>(*this);
   }
 
 #if 0
