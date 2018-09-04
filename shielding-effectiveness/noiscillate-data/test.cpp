@@ -6,6 +6,73 @@
 
 #include "rtlsdriqdump.hpp"
 
+// options:
+// - keep using eigen buffer as a stretchy buffer and accept memory reallocations twice per process
+// - use one size of eigen buffer, and track the size of it in the code
+// - use a map to adjust the perceived size of eigen buffer
+// - use a vector instead of eigen buffer, and map the vector when passing it in
+// - eigen has a wrapper for std::vector !
+                   
+
+template <typename Scalar, class DataProcessor>
+class DataFeeder
+{
+public:
+  DataProcessor(DataProcessor & processor, std::function<bool()> checkDataInterruptedHook = [](){return false;})
+  : processor(processor),
+    checkInterruptedHook(hook)
+  { }
+
+  template <typename Derived>
+  void add(Eigen::PlainObjectBase<Derived> const & chunk)
+  {
+    using min = Eigen::numext::mini;
+
+    size_t minNeeded = processor.bufferSizeMin();
+    size_t multipleNeeded = processor.bufferSizeMultiple();
+    size_t maxNeeded = processor.bufferSizeMax();
+    
+    // exhaust buffer
+    if (buffer.size() + chunk.size() < minNeeded)
+    {
+      buffer.conservativeResize(buffer.size() + chunk.size());
+      buffer.segment(buffer.size(), chunk.size()) = chunk;
+      return
+    }
+    auto chunkOffset = min(buffer.size() + chunk.size(), maxNeeded) % multipleNeeded - buffer.size();
+    buffer.conservativeResize(buffer.size() + chunkOffset);
+    buffer.segment(buffer.size(), chunkOffset) = chunk.head(chunkOffset);
+    processor.process(*this, buffer);
+
+    // pass segments of chunk
+    size_t nextSize;
+    while (!checkInterruped())
+    {
+      minNeeded = processor.bufferSizeMin();
+      multipleNeeded = processor.bufferSizeMultiple();
+      maxNeeded = processor.bufferSizeMax();
+      nextSize = min(chunk.size() - chunkOffset, maxNeeded) % multipleNeeded;
+      if (nextSize < minNeeded)
+      {
+        break;
+      }
+
+      process.process(*this, chunk.segment(chunkOffset, nextSize));
+      chunkOffset += nextSize;
+    }
+
+    buffer = chunk.tail(nextSize);
+  }
+
+  bool checkInterrupted() { return checkInterruptedHook(); }
+
+private:
+  DataProcessor & processor;
+  std::vector<Scalar> buffer;
+  HeapVector<Scalar> buffer;
+  std::function<bool()> checkInterruptedHook;
+};
+
 /*
 template <typename T>
 class StatsAccumulatorHistogram
@@ -476,7 +543,6 @@ private:
   std::vector<StatsAccumulator> periodWave;
   Eigen::InnerStride<Eigen::Dynamic> periodStride;
 };
-
 
 
 // PeriodFinder is a class that takes an incrementally-provided set of samples, and a range of possible periods, and identifies the strongest period in the data with that range
@@ -968,47 +1034,103 @@ class PeriodFinderFFT
 public:
   using Scalar = T;
 
+  // TODO: this needlessly performs a wide FFT and only looks at a fraction of it.
+  // instead one could apply a properly-widthed band-pass filter to the data and sparsely
+  // sample it, to tighten up the FFT (perhaps freq shift it and apply low-pass filter).
+  // i guess that would speed things up by roughly bufferSize / (maxPeriod-minPeriod)
+  // (if correct that would be a lot !!)
+
   PeriodFinderFFT(size_t minPeriod, size_t maxPeriod, size_t bufferSize, size_t downSampling = 1)
-  : _minPeriodsPerBuffer(bufferSize / maxPeriod),
-    buffer(bufferSize),
+  : _minPeriodsPerBuffer(bufferSize * downSampling / maxPeriod),
+    sampleBuffer(downSampling),
+    sampleBufferSize(0),
+    fftBuffer(bufferSize),
     //fftAccum(decltype(fftAccum)::Zero(bufferSize / minPeriod - _minPeriodsPerBuffer)),
     offset(0),
     downSampling(downSampling),
     buffersRead(0),
-    foregroundDists(bufferSize / minPeriod - _minPeriodsPerBuffer)
+    downsampleStride(downSampling),
+    foregroundDists(bufferSize * downSampling / minPeriod - _minPeriodsPerBuffer),
+    maxIdx(0),
+    maxIdx2(0)
   { }
+
+  static size_t periodResolutionToBufferSize(size_t period, Scalar resolution = 1.0)
+  {
+    using Eigen::numext::ceil;
+    return period + (size_t)ceil(period / resolution * period);
+  }
+
+  static Scalar bufferSizeToPeriodResolution(Scalar period, size_t bufferSize)
+  {
+    return period / (bufferSize / period - 1);
+  }
 
   template <typename Derived>
   void add(Eigen::PlainObjectBase<Derived> const & chunk)
   {
-    if (downSampling != 1)
-    {
-      throw std::logic_error("downSampling != 1 unimplemented");
-    }
+    //if (downSampling != 1)
+    //{
+    //  throw std::logic_error("downSampling != 1 unimplemented");
+    //}
+
+    size_t chunkOffset = 0;
 
     static constexpr typename Eigen::FFT<Scalar>::Flag fftFlags = static_cast<typename Eigen::FFT<Scalar>::Flag>(Eigen::FFT<Scalar>::Unscaled | Eigen::FFT<Scalar>::HalfSpectrum);
     Eigen::FFT<Scalar> fft(Eigen::default_fft_impl<Scalar>(), fftFlags);
 
-    // add chunk to buffer
-    size_t amountToFillBuffer = buffer.size() - offset;
-    if (chunk.size() < amountToFillBuffer)
+    // first empty sampleBuffer
+    if (sampleBufferSize > 0)
     {
-      buffer.segment(offset, chunk.size()) = chunk;
-      offset += chunk.size();
+      if (sampleBufferSize + chunk.size() < downSampling)
+      {
+        sampleBuffer.segment(sampleBufferSize, chunk.size()) = chunk;
+        sampleBufferSize += chunk.size();
+        return;
+      }
+
+      chunkOffset = downSampling - sampleBufferSize;
+      fftBuffer[offset ++] = sampleBuffer.head(sampleBufferSize).sum() + chunk.head(chunkOffset).sum();
+    }
+
+    // now calculate end of downsampling and refill sampleBuffer
+    size_t numDownedSamples = (chunk.size() - chunkOffset) / downSampling;
+    size_t chunkDownsamplingTail = chunkOffset + numDownedSamples * downSampling;
+    sampleBufferSize = chunk.size() - chunkDownsamplingTail;
+    sampleBuffer.head(sampleBufferSize) = chunk.segment(chunkDownsamplingTail, sampleBufferSize);
+
+    // make matrix to downsample chunk
+    Eigen::Map<Eigen::Matrix<typename Derived::Scalar, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> const, 0, decltype(downsampleStride)> downsamplingMap(chunk.derived().data() + chunkOffset, numDownedSamples, downSampling, downsampleStride);
+
+    // add chunk to buffer
+    size_t amountToFillBuffer = fftBuffer.size() - offset;
+    if (numDownedSamples < amountToFillBuffer)
+    {
+      fftBuffer.segment(offset, numDownedSamples) = downsamplingMap.rowwise().sum();
+      offset += numDownedSamples;
       return;
     }
-    buffer.segment(offset, amountToFillBuffer) = chunk.head(amountToFillBuffer);
+    else
+    {
+      fftBuffer.segment(offset, amountToFillBuffer) = downsamplingMap.topRows(amountToFillBuffer).rowwise().sum();
+    }
     
-    size_t chunkOffset = amountToFillBuffer;
+    size_t downsampledOffset = amountToFillBuffer;
     size_t amountRemaining;
 
     while (true)
     {
       // fft buffer if filled
-      fft.fwd(fftCurrentResult, buffer);
+      fftCurrentResult = fftCurrentResult.Constant(fftBuffer.size()/2+1, 7);
+      fft.fwd(fftCurrentResult, fftBuffer);
   
       // take abs of result and sum into accumulations
+      
       // this could be sped up by allow dist accumulators to handle matrices of parallel distributions: it would just be a vector of sums
+
+      // TODO: should we weigh the dists by the number of periods contained in the FFT
+      // for them?  note that we often get a good result after just 1 fft, so n=1 for the
+      // result freq.
       auto magData = fftCurrentResult.array().segment(_minPeriodsPerBuffer, foregroundDists.size()).abs().eval();
       overallInterestDist.add(magData);
       for (size_t i = 0; i < foregroundDists.size(); ++ i)
@@ -1018,23 +1140,23 @@ public:
 
       ++ buffersRead;
 
-      amountRemaining = chunk.size() - chunkOffset;
-      if (amountRemaining < buffer.size())
+      amountRemaining = numDownedSamples - downsampledOffset;
+      if (amountRemaining < fftBuffer.size())
       {
         break;
       }
 
-      buffer = chunk.segment(chunkOffset, buffer.size());
-      chunkOffset += buffer.size();
+      fftBuffer = downsamplingMap.middleRows(downsampledOffset, fftBuffer.size()).rowwise().sum();
+      downsampledOffset += fftBuffer.size();
     }
 
     // add last bit of chunk to buffer
-    buffer.head(amountRemaining) = chunk.tail(amountRemaining);
+    fftBuffer.head(amountRemaining) = downsamplingMap.bottomRows(amountRemaining).rowwise().sum();
     offset = amountRemaining;
 
     // calculate result
     maxVal = 0;
-    for (size_t i = 0; i < foregroundDists.size(); ++ i)
+    for (size_t i = 1; i < foregroundDists.size() - 1; ++ i)
     {
       if (foregroundDists[i].mean() > maxVal)
       {
@@ -1042,10 +1164,22 @@ public:
         maxIdx = i;
       }
     }
+    if (foregroundDists[maxIdx + 1].mean() > foregroundDists[maxIdx - 1].mean())
+    {
+      maxIdx2 = maxIdx + 1;
+    }
+    else
+    {
+      maxIdx2 = maxIdx - 1;
+    }
+    maxVal2 = foregroundDists[maxIdx2].mean();
   }
   
   size_t periodsRead() { return buffersRead * _minPeriodsPerBuffer; }
-  size_t bestPeriod() { return buffer.size() / (maxIdx + _minPeriodsPerBuffer); }
+  size_t bestPeriod() { return downSampling * fftBuffer.size() / (maxIdx + _minPeriodsPerBuffer); }
+  size_t bestPeriod2() { return downSampling * fftBuffer.size() / (maxIdx2 + _minPeriodsPerBuffer); }
+  size_t minBestPeriod() { return downSampling * fftBuffer.size() / (maxIdx + _minPeriodsPerBuffer + 0.5); }
+  size_t maxBestPeriod() { return downSampling * fftBuffer.size() / (maxIdx + _minPeriodsPerBuffer - 0.5); }
   /*
    * how will we really get the best significance?
    * probably consider the non-best periods samples from some kind of population
@@ -1061,36 +1195,233 @@ public:
 
     decltype(overallInterestDist) backgroundDist = overallInterestDist;
     backgroundDist.remove(foregroundDists[maxIdx]);
+    backgroundDist.remove(foregroundDists[maxIdx2]);
     
-    if (maxIdx > 1)
+    /*if (maxIdx > 1)
     {
       backgroundDist.remove(foregroundDists[maxIdx - 1]);
     }
     if (maxIdx < foregroundDists.size() - 2)
     {
       backgroundDist.remove(foregroundDists[maxIdx + 1]);
-    }
+    }*/
 
     return StatsDistributionSampling<Scalar, STATS_MEAN>(backgroundDist.fakeInfinitePopulation(), foregroundDists[maxIdx].size()).deviationSignificance(foregroundDists[maxIdx]);
+  }
+  Scalar bestSignificance2() {
+
+    decltype(overallInterestDist) backgroundDist = overallInterestDist;
+    backgroundDist.remove(foregroundDists[maxIdx]);
+    backgroundDist.remove(foregroundDists[maxIdx2]);
+    
+    /*if (maxIdx > 1)
+    {
+      backgroundDist.remove(foregroundDists[maxIdx2 - 1]);
+    }
+    if (maxIdx < foregroundDists.size() - 2)
+    {
+      backgroundDist.remove(foregroundDists[maxIdx2 + 1]);
+    }*/
+
+    return StatsDistributionSampling<Scalar, STATS_MEAN>(backgroundDist.fakeInfinitePopulation(), foregroundDists[maxIdx2].size()).deviationSignificance(foregroundDists[maxIdx2]);
   }
 
   //HeapVector<typename Eigen::FFT<Scalar>::Scalar> const & significances() { return fftAccum; }
 
 private:
   size_t _minPeriodsPerBuffer;
-  HeapVector<Scalar> buffer;
+  HeapVector<Scalar> sampleBuffer;
+  size_t sampleBufferSize;
+  HeapVector<Scalar> fftBuffer;
   HeapVector<typename Eigen::FFT<Scalar>::Complex> fftCurrentResult;
   //HeapVector<typename Eigen::FFT<Scalar>::Scalar> fftAccum;
   size_t offset;
   size_t downSampling;
   size_t buffersRead;
+  Eigen::OuterStride<Eigen::Dynamic> downsampleStride;
 
   StatsAccumulatorNormal<Scalar> overallInterestDist;
   std::vector<StatsAccumulatorNormal<Scalar>> foregroundDists;
 
   Scalar maxVal;
   size_t maxIdx;
+  Scalar maxVal2;
+  size_t maxIdx2;
 };
+
+#if 0
+// Takes more FFT's but finds the period with constantly increasing precision
+// Due to FFT, time is O(n log n).
+// RAM used does not need to increase over time if guess error is appropriately
+// decreased on a regular basis.
+template <typename T>
+class PeriodFinderResamplingFFT
+{
+public:
+  using Scalar = T;
+  using Complex = typename Eigen::FFT<Scalar>::Complex;
+  using Real = typename Eigen::FFT<Scalar>::Scalar;
+
+  PeriodFinderResamplingFFT(T guessFreq, T maxFreqError, T sampleRate)
+  : guessHz(guessFreq),
+    cropHz(maxFreqError),
+    sampleRateHz(sampleRate),
+    rawSampleCount(0)
+  { }
+
+
+  template <typename Derived>
+  void add(Eigen::PlainObjectBase<Derived> const & chunk)
+  {
+    using Eigen::numext::exp;
+
+    // 1. shift data with complex sinusoid with negative guess freq
+    
+    shiftedBuffer = chunk * exp(HeapVector<Complex>::LinSpaced(chunk.size(), rowSampleCount * EIGEN_PI * Complex(0, -2) * guessHz / sampleRateHz, (rowSampleCount + chunk.size()) * EIGEN_PI * Complex(0, -2) * guessHz / sampleRateHz));
+    
+    // DOWNSAMPLING BAND-PASS FILTER:
+    // 2. fft the shifted data
+    Eigen::FFT<Complex> fft(Eigen::default_fft_impl<Complex>(), Eigen::FFT<Complex>::Unscaled);
+    fft.fwd(shiftedFFT, shiftedBuffer);
+
+    // 3. crop the fft
+    auto cropPeriodsPerChunk = cropHz/*periods/sec*/ * chunk.size()/*samples/chunk*/ / sampleRateHz/*samples/sec*/;
+
+    // TODO: should we handle the nyquist frequency?  seems acceptable to ignore it
+    shiftedFFT.segment(cropPeriodsPerChunk, cropPeriodsPerChunk) = shiftedFFT.tail(cropPeriodsPerChunk);
+    // resize will be done by passing head() to ifft
+    
+    // 4. ifft the crop (much smaller !)
+      // map ongoingData to write to end directly
+    auto lenNewData = cropPeriodsPerChunk * 2;
+    auto oldDataLen = ongoingData.size();
+    ongoingData.resize(oldDataLen + lenNewData);
+    Eigen::Map<HeapVector<Complex>> ongoingTail(ongoingData.data() + oldDataLen, lenNewData);
+    fft.inv(ongoingTail, shiftedFFT.head(lenNewData));
+
+    // [5. unshift data to produce accurate downsample: we don't do this as there is no need]
+    
+
+    // hmmm the approach I envisioned was to accumulate enough data that the signal shows,
+    // and then to downsample further once the frequency is known better.
+    //
+    // We can't really downsample properly with our current lowpass filter, though, because
+    // it involves fft'ing the entire incoming bit >_> right? unsure
+    // fft the incoming buffer
+    // if we're downsampling a hueg amount then the final chunk will just be one freq
+    // we also have rectangular window artefacts =/
+    //
+    // my goodness
+    //
+    // but if I had a lowpass filter then I could pluck a sample at the proper spot.
+    //
+    // let's say I did have the lowpass filter, and could get downsampld incoming signals withotu window artefacts or needing to store a ton in a buffer ... that would remove all the fft's from the above code.  that soudns good!  I just need a filter with a proper width to it.  The lowpass filter is just how to downsample.
+
+    // NOTE; the solution for now might be to just do a bigger FFT until the accuracy of the period is down to a single sample.  Can calculate the needed size, too.  Maybe no downsampling is needed.
+    //
+    // what periods are in an fft?
+    // the indices are periods / buffer
+    // np.fft.fftfreq gives periods / sample
+    //
+    // I want samples / period, so it would be buffersize / index
+    // The largest period differences are at the low frequencies, naturally
+    //
+    // Note that if I frequency-shift something to DC, because the space is frequency rather
+    // than time, the information I have on it has to do with the original frequency, not the DC frequency ... in period-space it is just 'stretched'
+    
+    // I seem to have wasted a lot of time redoing things I already did with a different view.  The csin frequency shifting was the same as the cropping I was doing in the original function because I used the same technique as a lowpass filter.  I was completely unaware of this duplicate work, and should note that state in the future to see if there is some way to wait, back out, and try soemthing that I have better awareness of.
+    // but I do feel I have a better understanding of frequency-shifting of the FFT and the definition of the FFT with this bit of my mind.  these are things i have looked up in the past as well.
+    
+    // So the sample accuracy I have of a signal's period in the FFT has to do with the difference in period length of the adjacent integral neighboring periods/buffersize.
+
+    // I should probably just accumulate the biggest buffer I can, increasing the FFT resolution ... I imagine ...
+
+    // I'm confused as to my approach so I guess I should make it configurable.
+    //
+    // will the periodfinder spew out periods before it fills its first buffer?
+    //      yes I guess it should, that should resolve that set of conflicts
+    //
+    // what other questions need to be answered to add this simple functionality to
+    //   the existing FFT class?
+    //
+    // the addition is the concept of focusing on just adding more samples to identify
+    // the frequency better.
+    // the buffer size increase needed can be calculated.
+    //
+    // a second thingy shows me that the simplest way is just to pass a larger buffer
+    // size to the existing class.  this has no versatility.  that's not necessarily
+    // valuable but it is a path forward.  [one can assume that it is _faster_ although
+    // it is hard to judge without being aware of the alternatives]
+    //
+    // it will be slower when i change the frequency of the oscillator.  i'd also
+    // like to track multiple oscillators.  So we'll at least want to predict the
+    // buffer size, or choose a large enough buffer size to idntify all of them
+    //
+    // let's just do the constant buffer size for now.
+    //
+    // hmmmmm should it let the user pass the buffer size?
+    // or should it just pick a buffer size big enough to resolve the period to 1 sample?
+    //
+    // let's keep making this static fucntion that converts between the two
+    //
+    // ----
+    //
+    // okay, buffer size for period size
+    // periodsize = samples / period
+    // indices = periods / buffer
+    // buffersize = samples / buffer
+    //            
+    // i have periodsize.
+    // i'll need to convert this to an index to identify the resolution
+    // index = buffersize / periodsize
+    // in order to resolve 'resolution' differences from the period,
+    // I'll need index +- 1 to be a periodsize within resolution of the original
+    // buffersize / periodsize - 1 = buffersize / (periodsize + resolution)
+    // buffersize - periodsize = buffersize periodsize / (periodsize + resolution)
+    // buffersize (periodsize + resolution ) - periodsize (periodsize + resolution ) = buffersize periodsize
+    // (periodsize + resolution ) - periodsize (periodsize + resolution ) / buffersize = periodsize
+    // - periodsize (periodsize + resolution ) / buffersize = periodsize - periodsize - resolution
+    // periodsize (periodsize + resolution ) / resolution = buffersize
+    
+    // note: because it's a square wave, it's okay to downsample by averaging.
+    // the peak will stay flat
+
+    // okay, to get an accurate square wave it came to many gigasamples
+    // i feel this per-sample accuracy is helpful for resolving a highly attenuated source
+    // let's go with it: but it is notable that we could use poor accuracy.  we would
+    // have fewer ... is see; the amount of time needed for the recording would be
+    // multiplied by the ratio of inaccuracy to a single sample.
+    //
+    // downsampling may be possible while still allowing us to get accurate periods ...
+    // ... I think it is.  the fft catches the phase drift and includes it as a
+    // component of the frequency.  it cares more about where the peaks are.
+    //
+    // 
+
+    // with regard to downsampling ...  how will i accumulate the buffers?
+    // the incoming data is oversampled, and downsampling it will leave a little remaining.
+    // our downsampled data needs to fit into fft buffers, and a littl will be remaining at that time too
+    // where do I currently store the remaining data?  I guess I need another buffer for the remaining un-downsampled data.
+    //
+    // I keep one FFT buffer and process it when it's filled.
+    // I can keep doing that with downsampled data, but I'll need a little buffer to store overflow/remaining.
+
+  }
+
+private:
+  T guessHz;
+  T cropHz;
+  T sampleRateHz;
+  unsigned long long rawSampleCount;
+
+  HeapVector<Complex> shiftedBuffer;
+  HeapVector<Complex> shiftedFFT;
+  HeapVector<Complex> downsampledShiftedBuffer;
+
+  HeapVector<Complex> ongoingData;
+  HeapVector<Real> ongoingFFT;
+};
+#endif
 
 template <typename T>
 static constexpr T erfinv(T x)
@@ -1108,6 +1439,74 @@ static constexpr T erfinv(T x)
   return sqrt(-tt1 + sqrt(tt1*tt1 - tt2));
 }
 
+class PeriodFinderRunningAdjustment : public PeriodFinderBase
+{
+  // re: adaptive subsampling, the first approach is to try bigger and smaller and pick the best
+  //     an adaptive approach would try a range, and then eliminate part of the range and try a smaller range.
+  //
+  //     there are two sources of new information: acquiring more samples, and running more tests
+  //     running more tests lets us narrow down precision
+  //     acquiring more samples lets us increase confidence, and could decrease the number of tests needed
+  //
+  //     given the biggest problem with acquiring more samples is time, we want to spend as much as available on increasing tests, and then use more samples when they
+  //     are available.
+  //
+  //     at the moment there is no interface for timing; this might require refactoring.  we just want to code the algorithm to allow for it.
+  //     re: timing: I think the most flexible interface would be to provide for an interrupt function
+  //     classes I suppose would derive from a base that would provide a function to check if interrupted. (we could even hook into the base and check the rtl buffer)
+  //
+  //     can we parameterize the approaches of this algorithm?
+  //     chooseing what rises and falls to test: 
+  //      - 1, then the next, the next
+  //      - all at once, in parallel
+  //      - random ones, adding more if time allows
+  //
+  //     choosing where to try the rises and falls
+  //     : note that two rise/falls will be needed to adjust phase and period
+  //      - 2 adjacent to each guess, 6 total guesses
+  //      - all guesses ! pick the best
+  //      - adaptively subsample extreme of possibilities and middle
+  //
+  //    so in the second challenge, we have a domain of possible peaks, and we're looking
+  //    for the best one.  like a root finding problem.
+  //    in the first challenge, we have a lot of data and limited time.
+  //    maybe for now I'll test all the data at once in parallel? it seems mroe complicated
+  //
+  //    okay we have a buffer coming in: will we just test the next period, or all the
+  //    periods of the buffer? (of course the buffer mgiht have no periods)
+  //
+  //    it would be _easier_ to implement testing just the next period; accumulate a buffer
+  //    etc.  could I do this in a flexible way to expand to testing allt he periods at
+  //    once?
+  //
+  //    it's notable that if I have a guess period, I can view the data in such a way
+  //    that it is a matrix of rows, where each row is an instance of that period
+  //
+  //    okay ... and I did that already ... there's a parameterization here
+  //
+  //    my existing code tests a bunch of periods handed it
+  //    I guess to make it more general I would separate out into 3 tihngs:
+  //    - what dataset are we testing?
+  //      -> 'ringer' concept tests 2 overlapping period's worth of buffers at once
+  //      -> 'allinteger' concept tests every period in all buffers accumulated at once
+  //      we're missing a concept of held data vs 'archived' data.  
+  //      -> 'ringer' concept only needs the latest 2 periods, but could possibly work
+  //         with more
+  //      -> 'allinteger' concept discards buffers as soon as processed, but stores a
+  //        ton of state
+  //      maybe a good addition might be to allow the algorithm to control the buffer
+  //      size it gets.  this would mean I don't have to handle rebuffering in every
+  //      algorithm.  It would report back how much it 'ate' or 'needs' I suppose.
+  //    - what kind of test are we doing?
+  //      -> my previous test crafted 4 stats buckets for the period, and picked the most
+  //         likely ones to be peaks and troughs.  it did not use the phase
+  //      -> my next test will make 2 stats buckets, and it will determine both the phase
+  //         and the period.
+  //      sounds reasonable.  phase information does not need to be exposed;
+  //        could be provided to constructor
+  //    - how are we choosing which rises and falls to test?
+};
+
 // a useful structure for looking at this data would be downsampling it as a
 // distribution.
 // consider chunks of at least 2 samples and calculate the mean and std dev,
@@ -1117,21 +1516,24 @@ static constexpr T erfinv(T x)
 // downsampling could be done by reshaping into a matrix and taking colwise/rowise
 // downsample operation !
 
-int main()
+int main(int argc, char const * const * argv)
 {
   RtlSdrIQDump data(std::cin);
 
-  //PeriodFinderAccumulateAllInteger<PeriodModelAccumulatorNoiscillate<StatsAccumulatorHistogram<Scalar>>> periodFinder(2048000 / 80, 2048000 / 30, StatsAccumulatorHistogram<Scalar>(data.epsilon()));
-  PeriodFinderFFT<Scalar> periodFinder(2048000 / 20 - 1, 2048000 / 5 + 1, 2048000 / 5 + 1, 1);
+  constexpr size_t SAMPLERATE = 2048000;
+  constexpr Scalar FREQ_GUESS = 10;
+  constexpr Scalar FREQ_GUESS_ERROR = 5;
+  constexpr size_t FFT_BUFFERSIZE = 4 * 1024;// * 2 / 5 + 1;
+  constexpr size_t RADIO_BUFFERSIZE = 2048000 / 2;
+  constexpr size_t INITIALIZATION_SECS = 10;
+  constexpr size_t DOWNSAMPLING = INITIALIZATION_SECS * SAMPLERATE / FFT_BUFFERSIZE;
+  constexpr double BUFFERS_PER_SEC = SAMPLERATE / double(FFT_BUFFERSIZE);
+  PeriodFinderFFT<Scalar> periodFinder(SAMPLERATE / (FREQ_GUESS * 2) + 2, FFT_BUFFERSIZE * DOWNSAMPLING / 5 - 2, FFT_BUFFERSIZE, DOWNSAMPLING);
 
-  HeapVector<Complex> buffer(2048000 / 5 + 1);
+  HeapVector<Complex> buffer(RADIO_BUFFERSIZE);
   size_t lastPeriods = 0;
-  while (true)
+  for (data.readMany(buffer); buffer.size(); data.readMany(buffer))
   {
-    data.readMany(buffer);
-
-    if (!buffer.size()) break;
-
     // TODO: try using magnitude fo complex variance, and try twice as much data with i & q both considered real.  which of the 3 approaches has the most accurate stats?
     // could also look at all 3 metrics on the raw data: the best one is the most extreme and the most reliable
     //auto preprocessed = buffer.array().real().eval();
@@ -1140,11 +1542,23 @@ int main()
 
     periodFinder.add(preprocessed);
     if (lastPeriods != periodFinder.periodsRead()) {
-      std::cout << "Best significance so far: " << periodFinder.bestPeriod() << " (" << periodFinder.bestSignificance()*100 << " %)" << std::endl;
       lastPeriods = periodFinder.periodsRead();
+
+      // stop when stats imply small enough significance that there would be one error in a year of trials
+      if (periodFinder.bestSignificance2() <= 1.0 / (365.25 * 24 * 60 * 60 * BUFFERS_PER_SEC / lastPeriods))
+      {
+        break;
+      }
+
+      std::cout << "Best significance so far: " << periodFinder.bestPeriod() << " (" << Scalar(SAMPLERATE) / periodFinder.bestPeriod() << " Hz " << periodFinder.bestSignificance()*100 << " %)" << std::endl;
+      std::cout << "                          " << periodFinder.bestPeriod2() << " (" << Scalar(SAMPLERATE) / periodFinder.bestPeriod2() << " Hz " << periodFinder.bestSignificance2()*100 << " %)" << std::endl;
     }
   }
-  std::cout << "Best significance: " << periodFinder.bestPeriod() << " (" << periodFinder.bestSignificance()*100 << " %)" << std::endl;
+  std::cout << "Best significance: " << periodFinder.bestPeriod() << " (" << Scalar(SAMPLERATE) / periodFinder.bestPeriod() << " Hz " << periodFinder.bestSignificance()*100 << " %)" << std::endl;
+  std::cout << "                   " << periodFinder.bestPeriod2() << " (" << Scalar(SAMPLERATE) / periodFinder.bestPeriod2() << " Hz " << periodFinder.bestSignificance2()*100 << " %)" << std::endl;
+  std::cout << " (Range is "
+     << periodFinder.minBestPeriod() << "=" << Scalar(SAMPLERATE) / periodFinder.minBestPeriod() << " Hz  to "
+     << periodFinder.maxBestPeriod() << "=" << Scalar(SAMPLERATE) / periodFinder.maxBestPeriod() << " Hz)" << std::endl;
 
   //auto significances = periodFinder.significances();
   //for (size_t i = 0; i < significances.size(); ++ i)
@@ -1152,5 +1566,247 @@ int main()
   //  std::cout << significances[i] << " ";
   //}
   //std::cout << std::endl;
+  
+  //PeriodFinderAccumulateAllInteger<PeriodModelAccumulatorNoiscillate<StatsAccumulatorHistogram<Scalar>>> periodFinder2(periodFinder.minBestPeriod(), periodFinder.maxBestPeriod(), StatsAccumulatorHistogram<Scalar>(data.epsilon()));
+
+  //for (lastPeriods = 0; buffer.size(); data.readMany(buffer))
+  //{
+  //  auto preprocessed = buffer.array().real().eval();
+  //  periodFinder2.add(preprocessed);
+  //  if (lastPeriods != periodFinder.periodsRead())
+  //  {
+  //    
+  //  }
+  //}
   return 0;
 }
+
+// TODO GOAL [NEXT]:
+// Seems the ideal execution path might be:
+// - identify starting period
+// - identify the number of periods needed to accumulate to determine if the phase has
+//   shifted out
+// - keep adjusting for shift, using stats to do so.  we expect a constant average period
+//   but our average will never be exactly right, so there may always be a 1 sample shift
+//
+// but first of course we want to identify dB intensity if we have the right period, and
+// of course we're flexible in that measurement up to around 1/4 period shift, so
+// measuring intensity and adjusting for phase drift can go in parallel
+//  -> when very quiet it may drift more than 1/4 period in the time it takes to see it,
+//     so it's important to make use of subsample periods when predicting onsets
+
+/*
+ * My periodfinder that iterates through each period is kind of slow.  it has n*m
+ * complexity without any vectorization ... I bet I could do this with matrix ops.
+ *
+ * We have m periods we want to check, and a buffer of n samples.
+ * We want to accumulate the n samples in m different ways.
+ *
+ * So each n sample is turned into an m-length row and summed into m accumulators.
+ * Sounds pretty reasonable!  Just need to write the wrapping code.
+ *
+ * > hey, the FFT gives us the phase !
+ *   we can use this phase for every nearby period
+ *   we just need to ignore the samples where the inaccuracy of the phase could
+ *   affect things
+ *
+ * possible accumulators:
+ *  (sin*sig)^2 + (cos*sig)^2 for associated period
+ *    -> could just use sin or cos if we know phase
+ *  sliding noiscillate stats bins
+ *
+ *  sincos^2 is more conducive to linear algebra. less algorithmic code needed
+ *
+ *  it would be really nice to generalize this parallel-accumulator-matrix approach.
+ *  
+ */
+
+/*
+ * Making accumulator for square wave rather than sinusoidal
+ *      111111
+ * 00000      00000
+ *
+ * 11111      11111
+ *      000000
+ *
+ * we want results to maximally differ when square waves are out of phase vs in phase.
+ *
+ * summation works!
+ *
+ * - adjust wave to be DC centered
+ * - create model wave with same magnitude, DC centered
+ * - some with real wave.  In phase produces *2 magnitude DC signal, if abs is taken.
+ * - Out of phase produces moire effect, likely a sinusoidal signal centered around
+ *   *0.5 magnitude, with *0.5 magnitude.  Not sure if this is a sinusoid, maybe more
+ *   a triangle wave.
+ * 
+ * - ways of speeding up processing of square wavelet interference:
+ *   - could check derivative of interference wave.  DC will have minimal derivative.
+ *   - Wave is a noisy sinusoid of a frequency related to the distance from the correct
+ *     answer.
+ *
+ * I could interfere _one_ wavelet, and use the frequency of the interference signal
+ * to identify the actual frequency, and adjust.
+ *
+ * My original FFT performs this interference.
+ * Notably, though, I get a good answer after just 1 FFT.
+ *
+ *       | | | | | | | | | | | |
+ *    -
+ *    -
+ *    -
+ *
+ * When we manually do the interference, we accumulate every sample.
+ * But it takes many _periods_ each consisting of many _samples_ to identify the precise
+ * answer.
+ *
+ * After 1 sample, everything's pretty much in phase.
+ * We get interference once we get to half the minimum period length # of samples, or
+ * so.  There's a predictable point at which there is a sudden change.
+ *
+ * This point is really what's interesting.  It occurs again and again, and we can
+ * guess where it is with given accuracy.  The spots we know just give us information
+ * on the peak and valley populations.
+ *
+ * It's notable that after some number of periods, these spots won't work anymore
+ * as background population sources, because the phase drift will be too great.
+ * We can predict the minimum time at which that will happen.
+ *
+ * We can also look at the phase change between FFT's to figure this out !!!!!
+ * I think that may be all that's needed.
+ *
+ * The valuable piece of information is the mean of the slope of the phase.
+ * We'll need to accumulate phase, so that it wraps around, which will only work
+ * if the signal phase is much louder than the noise phase ie the signal itself
+ * is much louder than the noise.
+ *
+ * One way to ensure this I think would be to sum the ffts as complex numbers
+ * rather than real numbers.  This way the phases will sum, and the random changes
+ * will average out.
+ *
+ */
+
+/*
+ * Consider an FFT of a weak signal among noise.
+ * The strongest pieces of the FFT are the noise.  Random phase, random amplitude,
+ * but kind of a _floor_ of minimum amplitude.
+ *
+ * I assume I can find the signal but looking for a strong statistical difference
+ * in the peak -- a lot of averaging, basically.  This appears to work in practice,
+ * looking at gqrx and osmocom_fft.  The question is how to preserve the phase
+ * with this averaging.  If the noise is louder than the signal, the phase in each
+ * sample is basically the phase of the noise -- random -- with only a small adjustment
+ * for the phase of the signal.  Normally averaging would remove this, but because of
+ * how these things are placed in complex space it's not so easy.  The noise signal,
+ * because it is strongest, is centered about the origin, spinning all around, and
+ * the real signal is summed onto that, away from the origin.  So the change in the
+ * phase from the real signal is not directly related to the real signal phase, but
+ * indirectly related via geometry.
+ *
+ * noisevec + sigvec
+ * produces a triangle.  the angle change is related to the magnitude of the noise,
+ * for each sample, by some trigonometry.  Higher magnitude noise produces smaller
+ * change.  We could scale the sample up by its magnitude in the proper way
+ * to approximate the correct phaes change; that would not properly approximate the
+ * correct magnitude change.
+ *
+ * So if I'm averaging to find phase, I'd want to apply a transformation to the
+ * samples first.
+ *
+ * atan2(noisevec + sigvec) is related how to atan2(sigvec) ?
+ * atan2(cs(n_ang) * n_mag + cs(s_ang) * s_mag)
+ * sin(na) * nm + sin(sa) * sm; sm << nm
+ *
+ * The effect of sigvec_ang on the final angle is related to the distance of sigvec
+ * from the origin, which is the magnitude of noisevec.
+ *
+ * ISSUE! if we weigh the samples by a transformation, then the noise may not cancel
+ * out when unweighed.  It's notable that the noise is theoretically roughly the
+ * same magnitude each sample (maybe) ... but still in practice it doesn't work
+ *
+ * I'm leaning towards the approach here being to accumulate samples to decrease the
+ * noise below the level of the signal magnitude prior to doing the phase thing.
+ *
+ * So I have the signal in question in my FFT, and I have the noise floor.
+ * I know the max magnitude of the noise floor.
+ *
+ * I'll want to sum the fft's such that the noise contribution to the signal is minimal.
+ * Then I can use adjacent fft samples to determine the phase.
+ * It's the slope of normalized complex fft result.  We need each adjacent piece to have
+ * the signal louder than the noise; I believe this is doable.
+ *
+ * It's also notable that the signal is recoverable from the FFT, and may be analyzable
+ * this way ... but there's no need, once we have it precise we can look at the flat
+ * peak, perhaps using existing code.
+ *
+ * Hmm the noise here is different from the noise I was looking at before.
+ * 
+ * Well I guess the assumption is that the signal's fft is something summed onto
+ * the background fft; I'm not sure if that is true ...
+ *
+ * in time domain s1*m1 + s2*m2, c1*m1 + c2+m2
+ * in freq domain ang, mag
+ * hmm I feel this should be obvious
+ */
+
+
+
+// TODO NEXT FOR REAL: adjust fft accumulator to sum in a complex manner, so it can
+//  track changes to the phase.
+//      since we're planning on doing signals that are weaker than the noise, and phase
+//      information can be lost in such a situatio, we'll want to get the fft's strong
+//      enough such that the signal is louder than the noise in the accumulation
+//      -> note that this noise may or may not be the same as the backgroundDist;
+//         considering noise in maxIdx signal itself, to extract phase
+//      we'll want to apply the same statistical approach to the phase: get it accurate
+//      within some significance
+//      but we'll want to pay attention to the times of the phases somehow, so that
+//      we can identify phase drift
+//      might need a different kind of accumulator!
+//
+//      boost accumulators would be good for this
+
+// FFT PHASE APPROACH
+//  needs complex sum
+//  needs sample time to extract phase slope -> can perhaps be done with a second FFT over the waterfall
+//    -> could also maybe multiply/divide adjacent fft values to get average change in phase
+
+// ONGOING INTERFERENCE APPROACH
+//    I think the square-wave interference could be done really generally, and keep on
+//    going to narrow down precisely, without the FFT.  window of application shrinks
+//    as stastics provide confidence
+//
+//    If we don't want to guess the magnitude, previous samples could be referenced to
+//    provide the interference.
+
+
+
+
+
+// When converting PeriodFinderBase to DataProcessor with a passed template algorithm,
+// I found a desire to make the API nicer.  I wanted to make an interrupt() function
+// instead of registerCheckInterrupted().  But since we're still single-threaded,
+// there is nobody to call the interrupt() function.  Instead the DataProcessor will
+// need to call out.
+// A lightweight signals/slots implementation might fix this: we could register
+// a signal and the user could provide a handler to determine things.
+//
+// I'd like it to work for multithreaded things too.  The nice thing about the hook
+// is that the hook could call a signal, or it could check a condition variable
+// set concurrently ...
+//
+// it's also notable that setting a function pointer has comparable overhead to
+// using a virtual function.  It's actually easier to use a std::function from
+// other code, though.
+//
+// Really I have streaming going on here, and I'll be plugging the class into
+// a stream.  The process may be interrupted either with new data, or termination
+// due to the result being satistfactory or a time limit exhausted, I suppose.
+//
+// why did I do this conversion?  it allows the algorithm functions to be
+// inlined and called with fastcall/etc .. it allows the 
+// it separates the idea of how much data is coming in. it lets the central
+// class define an api function that calls the algorithm's function, without using
+// virtual functions
+//
+// i figured this was the best choice, but got stuck
