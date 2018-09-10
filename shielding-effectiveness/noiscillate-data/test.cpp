@@ -6,6 +6,39 @@
 
 #include "rtlsdriqdump.hpp"
 
+////////
+// I WAS CONFUSED
+//
+// LET'S GO TO THE FINISH LINE.
+//
+// The fft can find the frequency roughly.
+// We can get the dB from the FFT.  Is it usable?
+//
+// With an rough frequency, we can get the dB approximately, and redo the FFT to adjust for phase drift next buffers.
+// Will need to:
+// 1. accumulate enough buffers for FFT
+// 2. use perhaps existing 4-bin approach to measure dB.
+//
+// ALTERNATIVELY
+// if you'r having trouble going to the goal, it would be helpful to merge this work into emap, or to merge emap into gnuradio or pothos.
+
+// Can we get dB from FFT?
+// 1. switch FFT to complex? =S phase adjustment would be needed
+// 1. compare magnitude of FFT to magnitude of wave.
+
+// it's notable that harmonics give a much more precise frequency than the root frequency.  they can likely be found just by the max of the right area.
+// APPROACH FOR FINDING MORE PRECISE FREQUENCY:
+// 1. fft range gives range for each harmonic
+// 2. try harmics, pick real ones and treat maxes as frequencies
+//    -> criteria: must be statistically signicant given background
+//                 must be have frequency within range of fundamental
+// 3. divind range for harmonic fft by harmonic number gives a different max and min for fundamental frequency
+// 4. combining max and mins gives narrower range for fundamental frequency
+//
+// APPROACH FOR FINDING dB from FFT:
+// 1. height of peak is proportional to intensity of signal +- noise mag
+// - adding fundamentals could increase accuracy by increasing snr
+
 // options:
 // - keep using eigen buffer as a stretchy buffer and accept memory reallocations twice per process
 // - use one size of eigen buffer, and track the size of it in the code
@@ -18,15 +51,15 @@ template <typename Scalar, class DataProcessor>
 class DataFeeder
 {
 public:
-  DataProcessor(DataProcessor & processor, std::function<bool()> checkDataInterruptedHook = [](){return false;})
+  DataFeeder(DataProcessor & processor, std::function<bool()> checkDataInterruptedHook = [](){return false;})
   : processor(processor),
-    checkInterruptedHook(hook)
+    checkInterruptedHook(checkDataInterruptedHook)
   { }
 
   template <typename Derived>
   void add(Eigen::PlainObjectBase<Derived> const & chunk)
   {
-    using min = Eigen::numext::mini;
+    using Eigen::numext::mini;
 
     size_t minNeeded = processor.bufferSizeMin();
     size_t multipleNeeded = processor.bufferSizeMultiple();
@@ -37,27 +70,27 @@ public:
     {
       buffer.conservativeResize(buffer.size() + chunk.size());
       buffer.segment(buffer.size(), chunk.size()) = chunk;
-      return
+      return;
     }
-    auto chunkOffset = min(buffer.size() + chunk.size(), maxNeeded) % multipleNeeded - buffer.size();
+    auto chunkOffset = mini(buffer.size() + chunk.size(), maxNeeded) % multipleNeeded - buffer.size();
     buffer.conservativeResize(buffer.size() + chunkOffset);
     buffer.segment(buffer.size(), chunkOffset) = chunk.head(chunkOffset);
     processor.process(*this, buffer);
 
     // pass segments of chunk
     size_t nextSize;
-    while (!checkInterruped())
+    while (!checkInterrupted())
     {
       minNeeded = processor.bufferSizeMin();
       multipleNeeded = processor.bufferSizeMultiple();
       maxNeeded = processor.bufferSizeMax();
-      nextSize = min(chunk.size() - chunkOffset, maxNeeded) % multipleNeeded;
+      nextSize = mini(chunk.size() - chunkOffset, maxNeeded) % multipleNeeded;
       if (nextSize < minNeeded)
       {
         break;
       }
 
-      process.process(*this, chunk.segment(chunkOffset, nextSize));
+      processor.process(*this, chunk.segment(chunkOffset, nextSize));
       chunkOffset += nextSize;
     }
 
@@ -68,7 +101,6 @@ public:
 
 private:
   DataProcessor & processor;
-  std::vector<Scalar> buffer;
   HeapVector<Scalar> buffer;
   std::function<bool()> checkInterruptedHook;
 };
@@ -1034,11 +1066,8 @@ class PeriodFinderFFT
 public:
   using Scalar = T;
 
-  // TODO: this needlessly performs a wide FFT and only looks at a fraction of it.
-  // instead one could apply a properly-widthed band-pass filter to the data and sparsely
-  // sample it, to tighten up the FFT (perhaps freq shift it and apply low-pass filter).
-  // i guess that would speed things up by roughly bufferSize / (maxPeriod-minPeriod)
-  // (if correct that would be a lot !!)
+  // TODO: downSampling should use sinc function to properly take a rectangular window of data
+  //       can frequency shift by multiplying by complex oscillator to place window over period of interest
 
   PeriodFinderFFT(size_t minPeriod, size_t maxPeriod, size_t bufferSize, size_t downSampling = 1)
   : _minPeriodsPerBuffer(bufferSize * downSampling / maxPeriod),
@@ -1131,7 +1160,7 @@ public:
       // TODO: should we weigh the dists by the number of periods contained in the FFT
       // for them?  note that we often get a good result after just 1 fft, so n=1 for the
       // result freq.
-      auto magData = fftCurrentResult.array().segment(_minPeriodsPerBuffer, foregroundDists.size()).abs().eval();
+      auto magData = (fftCurrentResult.array().segment(_minPeriodsPerBuffer, foregroundDists.size()).abs() / (fftBuffer.size() * downSampling)).eval();
       overallInterestDist.add(magData);
       for (size_t i = 0; i < foregroundDists.size(); ++ i)
       {
@@ -1174,6 +1203,24 @@ public:
     }
     maxVal2 = foregroundDists[maxIdx2].mean();
   }
+
+  Scalar bestMag() { return foregroundDists[maxIdx].mean(); }
+  Scalar bestMagVariance()
+  {
+    decltype(overallInterestDist) backgroundDist = overallInterestDist;
+    
+    backgroundDist.remove(foregroundDists[maxIdx]);
+    backgroundDist.remove(foregroundDists[maxIdx2]);
+
+    return StatsDistributionSampling<Scalar, STATS_MEAN>(backgroundDist.fakeInfinitePopulation(), foregroundDists[maxIdx].size()).variance();
+  }
+  // wrt stats for bestMag, this is different.
+  // When we find the frequency, we give the % likelihood it's random noise
+  // But for the mag, we want a measure of the accuracy, not the chance of existing
+  // If we were to measure multiple mags, we'd have a distribution.  We want to know how close we are to the mean of that distribution.
+  // Oh!  hmm.  I guess we could give the standard deviation, or the variance.
+  // I could also give some kind of confidence interval.
+  // Given that we know the noise distribution, roughly, it should be reasonable.
   
   size_t periodsRead() { return buffersRead * _minPeriodsPerBuffer; }
   size_t bestPeriod() { return downSampling * fftBuffer.size() / (maxIdx + _minPeriodsPerBuffer); }
@@ -1439,7 +1486,7 @@ static constexpr T erfinv(T x)
   return sqrt(-tt1 + sqrt(tt1*tt1 - tt2));
 }
 
-class PeriodFinderRunningAdjustment : public PeriodFinderBase
+class PeriodFinderRunningAdjustment
 {
   // re: adaptive subsampling, the first approach is to try bigger and smaller and pick the best
   //     an adaptive approach would try a range, and then eliminate part of the range and try a smaller range.
@@ -1545,13 +1592,20 @@ int main(int argc, char const * const * argv)
       lastPeriods = periodFinder.periodsRead();
 
       // stop when stats imply small enough significance that there would be one error in a year of trials
-      if (periodFinder.bestSignificance2() <= 1.0 / (365.25 * 24 * 60 * 60 * BUFFERS_PER_SEC / lastPeriods))
+      if (periodFinder.bestSignificance() <= 1.0 / (365.25 * 24 * 60 * 60 * BUFFERS_PER_SEC / lastPeriods))
       {
         break;
       }
 
       std::cout << "Best significance so far: " << periodFinder.bestPeriod() << " (" << Scalar(SAMPLERATE) / periodFinder.bestPeriod() << " Hz " << periodFinder.bestSignificance()*100 << " %)" << std::endl;
       std::cout << "                          " << periodFinder.bestPeriod2() << " (" << Scalar(SAMPLERATE) / periodFinder.bestPeriod2() << " Hz " << periodFinder.bestSignificance2()*100 << " %)" << std::endl;
+      auto mag = periodFinder.bestMag();
+      auto err = sqrt(periodFinder.bestMagVariance()) * 3;
+      auto mindB = 20 * log10(mag - err);
+      auto maxdB = 20 * log10(mag + err);
+      auto dBctr = (maxdB + mindB) / 2;
+      auto dBerr = (maxdB - mindB) / 2;
+      std::cout << "                          " << dBctr << " dB +-" << dBerr << " dB" <<std::endl;
     }
   }
   std::cout << "Best significance: " << periodFinder.bestPeriod() << " (" << Scalar(SAMPLERATE) / periodFinder.bestPeriod() << " Hz " << periodFinder.bestSignificance()*100 << " %)" << std::endl;
@@ -1559,6 +1613,13 @@ int main(int argc, char const * const * argv)
   std::cout << " (Range is "
      << periodFinder.minBestPeriod() << "=" << Scalar(SAMPLERATE) / periodFinder.minBestPeriod() << " Hz  to "
      << periodFinder.maxBestPeriod() << "=" << Scalar(SAMPLERATE) / periodFinder.maxBestPeriod() << " Hz)" << std::endl;
+  auto mag = periodFinder.bestMag();
+  auto err = sqrt(periodFinder.bestMagVariance()) * 3;
+  auto mindB = 20 * log10(mag - err);
+  auto maxdB = 20 * log10(mag + err);
+  auto dBctr = (maxdB + mindB) / 2;
+  auto dBerr = (maxdB - mindB) / 2;
+  std::cout << "                          " << dBctr << " dB +-" << dBerr << " dB " << std::endl;
 
   //auto significances = periodFinder.significances();
   //for (size_t i = 0; i < significances.size(); ++ i)
@@ -1779,34 +1840,195 @@ int main(int argc, char const * const * argv)
 //    If we don't want to guess the magnitude, previous samples could be referenced to
 //    provide the interference.
 
+// i'm not sure what interference was, but the current plan is to combine periodfinderallinteger and the ringer idea
+// -> the concept of taking 4 bins will be factored out into a replacable algorithm
+// -> we only need 2 bins if we're testing the phase as well as the period
+//
+// so the period finder will be the interconnection between the choice of what periods to test, and how to test them
+// since one of the testers tests both periods and phases, this period finder will want to generalize the concept of a range of variables to test within.
+//
+// : range of variables to test
+// : testers themselves
+// : incoming data passed to testers
+// : pattern in which variables are chosen to pass to testers
+// : information flow from the testers to the pattern to choose what to text next (feedback)
+//
+// that's pretty much it -- the information flow is what's missing.
+// there are two kinds of information: confidence/significance, and nearness
+// so if I test [A] and determine it is 3.9, and I'm looking for a minimum, I know very little
+// if I test [A],[B],[C] and determine they are 3.2, 3.9, and 1.2, it looks like I should disregard A in my search for a minimum.
+// But I'll need some degree of error to determine if it's meaningful.  If they are +- 4, I have very little information.
+// I'll need a way to combine the error information from the results to determine how significant the results are.
+//
+// So, the proposal of adaptive subsampling is that the best answer is within a smaller range than the one passed in.
+// It's based on knowledge of the shape of the underlying data.  With these square waves, we expect a lot of locality ....
+//
+// When we pick a zero-crossing, we parcel out the data into possibly-high and possibly-low.  To judge this data, we can take the standard deviation (if it's real) or the mean
+// (if it's absolute), and compare that to the sampling dsitribution oft he best population we ahve available.  This will give us a % likelihood that we sampled the correct
+// populations.
+//    -> this could be improved statistically since part of our sample _is_ from the correct population, and the other part is from a known population
+//    but the end result is we get a % of how likely this sample is, if we actually sampled the correct population
+//
+// This % will fall off smoothly from a peak of choosing the correct zero-crossing: it'll get more jittery as more noise is introduced
+//
+// The adaptive subsampler will get these %'s and have to decide whether to sample the whole area more to get more data and increase the confidence, or whether to accept
+// some regions as not of interest or not worthwhile, and sample a likely region more densely.  (it should spew out a list of what to sample next, so the implementation can
+// vectorize or parallelize).
+//
+// How do we combine these %'s into one combined significance?  It appears to depend on the underlying data.
+// hmmm this has a 4% chance of being wrong, this has a 2% chance of being wrong; this has a 10% chance of being wrong
+// if we want to hypothesize that all are right, we can combine them with probability
+// 98% of being right, and 96% of being right, and 90% of being right
+//
+// 96% : A is right
+//        98%: B is right
+//         2: B is wrong
+//  4  : A is wrong
+//        98%: B is right
+//         2: B is wrong
+// if A and B are both right, then the result is 98% of 96% = 0.98 * 0.96: a lower chance that both are right
+// if A and B are both wrong, we get 0.04 * 0.02: a very low chance of both being wrong
+//
+// | | | | | | |.| | |
+// it's notable that none of them are right, because they are all approximations.
+// the result of this metric will be a curve approaching the right value.
+//
+// how do we hypothesize that we are on one side of the goal, without regard to whether we are at it or not?
+// we look at only 1 of the 2 distributions for the new approach
+// if we have many samples of a region, and we want to propose that the best choice is within a particular area of the region, we want to use the portions of each sample that
+// help us back up that choice.
+//
+// what are the chances ... etc ...
+// hmmmmmmmmmmmmmmmmmmm this doesn't quite seem to work!
+// what information do I really want from the ringer, for the adaptive subsampler to make the best choice?  I'm not sure that it's the standard deviation sampling thing I was
+// looking for.
+//
+// The ringer wants to break the variable space into two regions and test the hypothesis of the result being in one, or in the other.
+//
+// What do we need in order to test this hypothesis, for square wave noise?
+// We have k spots we want to gain metrics around.
+// For each k spot, we partition the period in two, and get stats attributes for the two partitions
+//      -> this can be done by getting stats for the segments, and summing them
+// We can then consider that the answer is between any two spots, by considering the stats to the left and right
+// I guess we'd need to start with 3 spots?
+//    we'd consider only 1 stats group for each test, even though we have 3 ! but 2 of the 6 actual bins are empty
+//
+// stats-edges-approach: for each pair, test if the answer is within that pair by ignoring the stats within the region, and testing the stats outside it
+// maximum-approach: subsample the pair with the maximal metric; disregard other samples
+// interpolation: determining an accurate guess by using the information within a region.
+//
+// i'm used to adaptively subsampling object edges.   i usually start with screen edges and object centers: we divide by two until hitting the edge
+// it's helpful to do this in this manner because objects have lots of changes near the edges, and change slowly away, and we want to resolve it all
+// but here we _only_ want to resolve the edge: so it could be meaningful to make a good guess, and then consider points around that guess that have
+// to do with the accuracy of the guess.  this would be most effective.
+//
+// the maximum approach combines the 2 sets of information for each point, and then subsampling can pick the two best spots to look down into
+// the stats-edges approach doesn't use a region of information in making the decision, but it gets information directly applicable to determining
+// the confidence of the decision
+//
+// trying to understand this unused region ... ideally i want to use as much information as possible so as to make the best decision
+// i guess we could use the stats on the region to inform the decision .... if they are off-base compared to the other two groups, it's a pretty good indicator,
+// but this would only happen if the real position is not near the edge of the region
+//
+// i'll try looking at this a different way.
+// consider all the spots: could we form a decision on whether or not the change is to the right of the spot? or to the left?
+// if it is in one direction, then we know the level of that spot, and the level of all the spots in the other direction.
+// hum this is the same information !
+//
+// perhaps the trick is to consider when the change is near the edge of the region
+// then considering that the change is _at_ a spot will appear valuable, and will give more confidence than considering that the change is in the region
+//
+// say we were to compare the proposition that the change is at the spot vs in the region
+// this is really different depending on whether the change is near the spot or not !
+//
+// the maximum approach considers only that the change is at spots, and it just picks the ones that look the best
+// the data in the region: we have the moments
+// 
+// the number of periods to test is in the 10000s at least (perhaps 50000s), and the data that needs to be accumulated and processed for each one is in the millions
+// processing each one involves summing chunks of the millions data
+// so if I were to test each one, it's O(n * m)
+// I'm trying to make it be O(n log(m))
+//
+// but i'm not sure I really understand this .... processing one of these 40000 periods means breaking the 2m datapoints into two groups, and summing each one
+// if I were to process each 40k period, I'd need to make 40k of these sums
+// but each adjacent one is just slightly different from the other one
+// so I could assume the first period: sum all the data into the 2nd group
+// as the 1st group moves forward (oh I don't quite have it right, it's more complicated than that)
+// as the 1st group moves forward, we'd add one sample to one sum, and remove it from the other
+// this is O(2 n)
+// we don't have to reprocess all the data: just the changes from the previous processed one
+//
+// this would work well for the existing approach which is unaware of periods and leaves half of the data unconsidered
+//
+// how could I expand it to phases? I can't really test all the phases, but I have a small range of phases that are worth considering ...
+//
+// as I move forward my knowledge of where the signal is likely to be decreases due to phase shift and my uncertainty 
+// so as I get more certain about the nature of the signal, I can expand the set of data I use to consider it
+//
+// Here's a pattern which I should try as much as possible to fit into my generic model:
+// - when a buffer comes in, FFT it to get an idea of the phase and period
+// - test periods using an algorithm that is not O(n^2), considering the data remaining
+//
+// our period length is known within a specific range
+// like the same is true of the phase
+//
+// so for a given period within the recording we can define upper and lower boundaries for each of its zero-crossings
+// this gives us regions of known high and low
+//
+// we can take the data from the known high and low, put it in population accumulators, and discard it
+// 
+// the data from the known periods is different depending on its distance .....
+// -> I'll need to use a complex FFT in order to get phases
+// -> I'll need to adjust the FFT phase in each result in order to get the complex answers to line up (there might be other approaches, like taking the geometric mean)
+//
+// Okay, I'm not sure if I can extract the phase from the FFT for sure or not, so I should provide for it also coming from a 4-bin system like AllInteger, which requires no
+// storage but can eventually approximate the phase within 90 deg; could be modified to have arbitrary [low] precision for some ram
+// would need to optimize it to be O(2n)
+//    -> is it really O(2n) to slowly shift the bins, one sample at a time?
+//       I think so.  This shifting lets the bins track their std dev, variance, and mean ... the only loop is over the bins, not the data. at worst O(2n + C m)
+//
+//
+//
+// hrm ... how do we accumulate data with this approach?
+// the old approach was to have 4 stats bins _for every possibly period_
+// so they could all accumulate data coming in
+// if we adjust the stats bins, can we still accumulate?
+// when we drop the old data, we lose the ability to adjust them.
+//
+// so this is going to be a new approach.
+// it needs to have a clue of the period (not the phase) and then it may be able to store some information that accumulates in the bins
+//
+// FFT guesses period range: doesn't need storage to do so
+// AllIntegers2 starts working within FFT range ... we just assume our phases of 0 deg, 90 deg, 180 deg, 270 deg, and fill old data while letting new come in
+// => problem, if signal is weak, eventually our phase ranges will go out of sync
+//    => at this time, an approach would be to save them and start accumulating more, then look for the most similar and add
+//      of course, with weak enough signal this correlation would be random and the signal would never be found
+//      a better approach might be longer-term adaptive subsampling
+//      or this fft-of-fft thing you have so much trouble thinking about
+//
+// if I adaptively subsample them, can it keep going in the face of superweak signals?
+// I can at least pick a best period with the data I have.
+//        if the signal were weak enough, this result would be random.
 
 
-
-
-// When converting PeriodFinderBase to DataProcessor with a passed template algorithm,
-// I found a desire to make the API nicer.  I wanted to make an interrupt() function
-// instead of registerCheckInterrupted().  But since we're still single-threaded,
-// there is nobody to call the interrupt() function.  Instead the DataProcessor will
-// need to call out.
-// A lightweight signals/slots implementation might fix this: we could register
-// a signal and the user could provide a handler to determine things.
+// sorting out my approach has gotten derailed
+// now I'm looking for a solution that will work for arbitrarily-weak signals when the error with which we know their period is too large to hold enough of them in memory to find
+// them.
+// I can _find_ an arbitrarily weak signal using the sum of the FFT power, but I can't precisely know its period if it is too weak to have any discernible change on a ram buffer
+// full of noise.
+// A window into a larger fourier algorithm would discern its period (and phase, possibly), but the algorithms available don't tend to do that
+// I could make this window with a low-pass or band-pass filter.
+// hmm all i need is a band-pass filter for this approach.  let's just go for it
 //
-// I'd like it to work for multithreaded things too.  The nice thing about the hook
-// is that the hook could call a signal, or it could check a condition variable
-// set concurrently ...
 //
-// it's also notable that setting a function pointer has comparable overhead to
-// using a virtual function.  It's actually easier to use a std::function from
-// other code, though.
+// okay, sinc(t) * 2 * bw 
+// I guess I'll read about those.
 //
-// Really I have streaming going on here, and I'll be plugging the class into
-// a stream.  The process may be interrupted either with new data, or termination
-// due to the result being satistfactory or a time limit exhausted, I suppose.
 //
-// why did I do this conversion?  it allows the algorithm functions to be
-// inlined and called with fastcall/etc .. it allows the 
-// it separates the idea of how much data is coming in. it lets the central
-// class define an api function that calls the algorithm's function, without using
-// virtual functions
 //
-// i figured this was the best choice, but got stuck
+// I think all the approaches can be combined.
+// Regarding the problem of getting stats from single metrics, with the FFT we take stats regarding the peak metric's value compared to the background metric.
+//        -> with other metrics, it's probably possible to solve for the expected smooth curve to get reasonable stats.  we need to know the shape of the curve and figure out
+//           how it will relate.
+// Adaptive subsampling can be applied to the FFT approach too, just throwing complex sinusoids at the data.
+//        -> this will probably create a wide curve, since the DFT has unit-widthed peaks
