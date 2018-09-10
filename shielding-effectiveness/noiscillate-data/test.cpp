@@ -1212,6 +1212,8 @@ public:
     backgroundDist.remove(foregroundDists[maxIdx]);
     backgroundDist.remove(foregroundDists[maxIdx2]);
 
+    backgroundDist.recalcForUnderlyingDataWithZeroMeanOfAbsoluteValue();
+
     return StatsDistributionSampling<Scalar, STATS_MEAN>(backgroundDist.fakeInfinitePopulation(), foregroundDists[maxIdx].size()).variance();
   }
   // wrt stats for bestMag, this is different.
@@ -1572,7 +1574,7 @@ int main(int argc, char const * const * argv)
   constexpr Scalar FREQ_GUESS_ERROR = 5;
   constexpr size_t FFT_BUFFERSIZE = 4 * 1024;// * 2 / 5 + 1;
   constexpr size_t RADIO_BUFFERSIZE = 2048000 / 2;
-  constexpr size_t INITIALIZATION_SECS = 10;
+  constexpr size_t INITIALIZATION_SECS = 1;//10;
   constexpr size_t DOWNSAMPLING = INITIALIZATION_SECS * SAMPLERATE / FFT_BUFFERSIZE;
   constexpr double BUFFERS_PER_SEC = SAMPLERATE / double(FFT_BUFFERSIZE);
   PeriodFinderFFT<Scalar> periodFinder(SAMPLERATE / (FREQ_GUESS * 2) + 2, FFT_BUFFERSIZE * DOWNSAMPLING / 5 - 2, FFT_BUFFERSIZE, DOWNSAMPLING);
@@ -1591,12 +1593,6 @@ int main(int argc, char const * const * argv)
     if (lastPeriods != periodFinder.periodsRead()) {
       lastPeriods = periodFinder.periodsRead();
 
-      // stop when stats imply small enough significance that there would be one error in a year of trials
-      if (periodFinder.bestSignificance() <= 1.0 / (365.25 * 24 * 60 * 60 * BUFFERS_PER_SEC / lastPeriods))
-      {
-        break;
-      }
-
       std::cout << "Best significance so far: " << periodFinder.bestPeriod() << " (" << Scalar(SAMPLERATE) / periodFinder.bestPeriod() << " Hz " << periodFinder.bestSignificance()*100 << " %)" << std::endl;
       std::cout << "                          " << periodFinder.bestPeriod2() << " (" << Scalar(SAMPLERATE) / periodFinder.bestPeriod2() << " Hz " << periodFinder.bestSignificance2()*100 << " %)" << std::endl;
       auto mag = periodFinder.bestMag();
@@ -1606,6 +1602,12 @@ int main(int argc, char const * const * argv)
       auto dBctr = (maxdB + mindB) / 2;
       auto dBerr = (maxdB - mindB) / 2;
       std::cout << "                          " << dBctr << " dB +-" << dBerr << " dB" <<std::endl;
+
+      // stop when stats imply small enough significance that there would be one error in a year of trials, and dB is within 0.1
+      if (periodFinder.bestSignificance() <= 1.0 / (365.25 * 24 * 60 * 60 * BUFFERS_PER_SEC / lastPeriods) && dBerr <= 0.1)
+      {
+        break;
+      }
     }
   }
   std::cout << "Best significance: " << periodFinder.bestPeriod() << " (" << Scalar(SAMPLERATE) / periodFinder.bestPeriod() << " Hz " << periodFinder.bestSignificance()*100 << " %)" << std::endl;

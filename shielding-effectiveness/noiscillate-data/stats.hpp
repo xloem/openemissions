@@ -132,6 +132,16 @@ public:
   Scalar moment2() const { return sum2() / size(); }
   Scalar moment4() const { return sum4() / size(); }
 
+  // For data which has had its absoute value taken before the statistics were taken,
+  // if that data had a zero mean,
+  // this alters the object such that the mean and variance will represent those of the data prior
+  // to the absolute value having been taken.
+  void recalcForUnderlyingDataWithZeroMeanOfAbsoluteValue()
+  {
+    this->setMean(0);
+    this->setVariance(this->sum2() / (size() - (this->isSample() ? 1 : 0)));
+  }
+
 protected:
   StatsDistributionBySums()
   : StatsDistributionByMeasures<T, Derived, OPTIONS>(0, 0),
