@@ -5,6 +5,28 @@
 #include "stats.hpp"
 
 #include "rtlsdriqdump.hpp"
+#include "soapylive.hpp"
+
+////////
+// CURRENT STATUS AND PLAN
+//
+// dB exist but will be unsatisficatory when signal level is below noise level.
+// I think more accuracy could be acquired by taking the FFT of the squared magnitude rather than the magnitude; I think the dB may sum under that condition.  Test is needed.
+// 
+// Whatever the current strategy for finding the dB is, any harmonics that have dB above some cutoff may be used to identify frequency better.
+// That's for FFT.  I think direct period comparison approaches will wok more accurately, but we'll need to factor out the algorithm for choosing which periods to try; the current one-by-one approach is too slow
+// unless we can start with more accuracy.  Things can also be sped up by creating one stats class that parallelizes all the periods.
+
+////////
+// Found the dB with the FFT.
+// Unforunately, it's not very precise.  Also, not knowing the frequency precisely will make it hard to separate data with different attributes if the source is in motion.
+//
+// I think the next step should be to get a more accurate frequency from the harmonics, as in APPROACH FOR FINDING MORE PRECISE FREQUENCY below.
+// Then the device can be calibrated before measurement is synchronized with motion.
+// (I imagine a source that is moving in a planned way to measure e.g. SE at different distances.  To get the value at 1 single distance may require combining samples that are not
+// near each other but have well-known recording time.  This won't be conducive to using FFT, but having accurate freq will allow other techniques to be used relatively easily.)
+//
+// NEXT: Try APPROACH FOR FINDING MORE PRECISE FREQUENCY below.  (can also sum all peaks for more precise mag)
 
 ////////
 // I WAS CONFUSED
@@ -39,12 +61,24 @@
 // 1. height of peak is proportional to intensity of signal +- noise mag
 // - adding fundamentals could increase accuracy by increasing snr
 
-// options:
-// - keep using eigen buffer as a stretchy buffer and accept memory reallocations twice per process
-// - use one size of eigen buffer, and track the size of it in the code
-// - use a map to adjust the perceived size of eigen buffer
-// - use a vector instead of eigen buffer, and map the vector when passing it in
-// - eigen has a wrapper for std::vector !
+// thoughts on harmonics:
+// A problem exists where each harmonic will have [decreasing] statistical significance.
+// One approach could be to assume that the harmonics exist, without regard to how strong they are relative to noise.
+// I've been assuming the signal magnitude is the height of the peak +- noise mag -- but once the sig mag gets low towards the noise mag, I think this will change.
+// e.g. if the sig mag is 0.1 and the noise mag is 1.0, the range will be 0.0 to 1.1.  Most of the time the harmonic will be invisible.
+// Say the peak is 1.05 and the real sig mag is 0.1 .  This means the noise mag was 0.95 .  
+//
+// 0.1 sig.  Could have any phase or sign.  1.0 noise.  Summed with sig.
+//
+// So if I measure a 1.1 peak, and the noise is 1.0, we can basically assume the peak is nonexistent because the noise change could bring it below zero.
+//
+// How would I sum multiple peaks?  When I have 4 of a single peak, I can take it as a sampling distribution of the means.
+// If I have two different peaks, is it different?  if I sum them the noise should cancel out .... but that assumes that the noise contributes in both an additive and subtractive manner, which is only true
+// if the peak is louder than the loudest expected noise.
+//
+// So I can't blindly sum all the peaks -- some of the noise will not cancel itself out.  I'll just want loud peaks.  It seems I'll need to make some kind of assumption about the noise; I'll need some kind of
+// confidence interval or such.  The % confidence I want should be related to the number of trials I want to require before a msitake is found.  I've been doing a year of runs, which involves dividing the time
+// in a year by the time of the trial.
                    
 
 template <typename Scalar, class DataProcessor>
@@ -98,6 +132,99 @@ public:
   }
 
   bool checkInterrupted() { return checkInterruptedHook(); }
+
+  // Harmonics
+  //
+  // Integer multiples of the real fundamental will contain harmonics.
+  // Harmonics magnitude will be real harmonic magnitude +- noise magnitude, so we can only see a harmonic if it is louder than the noise, right?
+
+
+
+  // Harmonic problem: my perception indicates that harmonics will only be recordable if louder than noise.  This doesn't make sense: we should get a small statistical change for even a very weak harmonic.  How to merge
+  // these two perceptions?
+  //
+  // Okay, I _measured_ signal strength amidst noise, and found the height of the peak was proportional to the strength of the signal, +- noise.
+  //
+  // My intuition is that over many summed recordings, a weak peak will stand out amidst noise.
+  //
+  // NOISE 
+  //    VALUE has a mean value of zero; it is sometimes loud sometimes weak, and the phase is random
+  //    MAGNITUDE has a mean value of nonzero: the value is sometimes zzero sometimes loud, and the average is somewhere between
+  //    STD DEV OF VALUE has a mean nonzero value which is different from the mean of the magnitude (sum of the square roots vs square root of the sum)
+  //                     it stays the same as more data is added
+  //    STD DEV OF MAGNITUDE ACROSS TIME has a mean nonzero value
+  //                     I'm thinking this value stays the same as more data is added
+  //
+  // Over many 
+  //
+  //
+  // okay, so what ends up being significant here is that I am comparing adjacent FFT bins with each other -- not the data over time, but rather over frequency.
+  // As I add more data, the standard dev of the mean will decrease because I have more samples.  Each fft bin is a sampling mean, and they will become more similar over time, each approaching the true noise mean.
+  // the noise + signal bins will have different behavior: as the mean is taken, the further samples of the noise tend to move closer to the average.
+  // So, on average, a powerful signal will move towards its real value as the noise cancels out.
+  //
+  // How does a weak signal behave?
+  //
+  // If the signal is only a little louder than the noise, we will see the signal's value.
+  // If the signal is less loud than the noise, what do we see? ?????
+  //
+  // Okay, the FFT result is actually complex.  It's a vector in the complex plane.  It has random phase and random magnitude, wrt noise component.
+  // The signal component has constant magnitude, and changing phase.
+  //
+  // If we sum random magnitude @ random phase, with constant magnitude @ changing phase, how do we get a result that isolates the constant magnitude?
+  //
+  // What's the magnitude of the result?  random magnitude will sometimes be small -- at those times, the result will be the constant magnitude +- the random magnitude
+  // When the random magnitude exceeds the size of the cosntant magnitude, funny things can happen.  When they are in-phase, the result doubles.  When they are out-of-phase, the result gets super tiny.
+  //
+  // What's the mean?
+  //
+  // Since sin/cos are symmetrical, we can likely find the mean by average the extrema.  no ... not quite ... the volume density may change near zero compared to far away.
+  //
+  // What we're doing here is convolving two spheres.  One sphere is randomly sized, and one sphere is sized a constant, small amount.  We want to know the center of mass of the convolved sphere.
+  // The spheres are not filled.  They are surfaces only.
+  // If I convolve one sphere with another, I get two concentric spheres with the insides filled.  The center of mass of two concentric spheres is their center.
+  //
+  // Okay, errors:  these are circles, not spheres.  the complex plane is 2 dimensional.
+  // The cosntant circle is progressing at a cosntant rate.  It's not a random circle like the noise.  Let's try treating it like a constant vector.
+  //
+  // A vector plus a circle equals an offset circle.  So the random noise is offset from the origin by the constant vector.
+  //
+  // If I take the magnitude of the result in order to undo the effect of the phase changes to the constant value, what magnitude will I see?
+  //
+  // -> note, we could undo the phase progression if we took the FFT of the FFT bin values; then we wouldn't need to take the magnitude
+  //
+  // the resulting average magnitude will be the average of all the distances of all the points on that circle from the origin.
+  //
+  // given that (x - c)^2 + y^2 = r^2, what is integral(sqrt(x^2 + y^2), dt, 0, 2pi)?
+  // x = r cos(t) + c
+  // y = r sin(t)
+  //
+  // integral(x^2 + y^2, dt, 0, 2pi) / (2pi)
+  //
+  // x^2 = (r cos(t) + c) * (r cos(t) + c)
+  // x^2 = r cos(t) * (r cos(t) + c) + c r cos(t) + c^2
+  // x^2 = r cos(t) * r cos(t) + r cos(t) * c + c r cos(t) + c^2
+  // x^2 = r^2 cos^2(t) + r cos(t) * c + c r cos(t) + c^2
+  // x^2 = r^2 cos^2(t) + 2 r c cos(t) + c^2
+  // y^2 = r^2 sin^2(t)
+  //
+  // x^2 + y^2 = r^2 cos^2(t) + 2 r c cos(t) + c^2 +  r^2 sin^2(t)
+  // x^2 + y^2 = r^2 + 2 r c cos(t) + c^2 
+  // x^2 + y^2 = r^2 + c^2 + 2 r c cos(t)
+  //
+  // integral(x^2 + y^2, dt, 0, 2pi) / 2pi = 
+  // r^2 + c^2 + 2 r c integral(cos(t), dt, 0, 2pi) / 2pi
+  // = r^2 + c^2
+  //
+  // so
+  // I think I got that the mean of the square of the mixed signal's value will be equal to the magnitude of the noise squared plus the magnitude of the signal squared
+  // unfortunately I assumed noise with constant magnitude and random phase!  in reality our noise will have random magnitude
+  //
+  // additionally, the integral will depend on the magnitude distribution
+  //
+  // but what will happen is that r will change randomly, whereas c will not.
+  //
+  // so it's looking to me like if I sum the square of the value instead of the magnitude, the result will = the mean of r^2 (which I think is the variance) plus the signal^2
 
 private:
   DataProcessor & processor;
@@ -1556,6 +1683,428 @@ class PeriodFinderRunningAdjustment
   //    - how are we choosing which rises and falls to test?
 };
 
+
+// FIX TODO FIX: when detecting wave, would like to do complete integration that allows all noise to cancel
+//  and combines all samples of accumulated wave to pick out weakest signal
+//  doing this multiplies strength by integral under wave (roughly wavelength in samples) and requires
+//  phase to be known by bringing recorder near emitter briefly or synchronizing clock via other means
+template <typename Scalar>
+class PeriodFinderConvolveDownsample
+{
+public:
+  PeriodFinderConvolveDownsample(size_t minPeriod, size_t maxPeriod, size_t samplesPerCoarsestUnit)
+  : _mips(std::log(samplesPerCoarsestUnit) / M_LN2 + 0.5),
+    _samplesProcessed(0),
+    _periodStats(1, (minPeriod + maxPeriod) / 2)
+  {
+    if (minPeriod <= maxPeriod / 2)
+      throw "minPeriod must be more than half maxPeriod";
+
+    _mips[0].minPeriod = minPeriod;
+    _mips[0].maxPeriod = maxPeriod;
+    _mips[0].modelSums = HeapVector<Scalar>::Zero(maxPeriod);
+
+    // fill mip indices > 0
+    for (size_t i = 1; i < _mips.size(); ++ i) {
+      _mips[i].minPeriod = _mips[i-1].minPeriod / 2;
+      _mips[i].maxPeriod = _mips[i-1].maxPeriod / 2 + 1;
+      _mips[i].modelSums = HeapVector<Scalar>::Zero(_mips[i].maxPeriod);
+    }
+    if (_mips.back().maxPeriod < 4)
+      throw "samplesPerCoarsestUnit too large";
+    
+    // allocate some ram for period tracking
+    _onsetsCur.resize(4096);
+    _periodsCur.resize(4096);
+  }
+
+  template <typename Derived>
+  void add(Eigen::PlainObjectBase<Derived> const & chunk)
+  {
+    // 1. downsample to H *2
+    _mips[0].chunk.conservativeResize(chunk.size());
+    _mips[0].chunk = chunk; // this memory copy is unnecessary but makes code simpler
+    for (size_t i = 1; i < _mips.size(); ++ i)
+    {
+      // each iteration sums adjacent elements, resulting in size/2
+      // TODO: if we keep the phase aligned, then periods could be accumulated
+      //       to detect signals orders of magnitude weaker, depending on accuracy of guess
+      //       would want to form a map with stride == guess, and then sum the downsamples based on
+      //       blocks of inequal sizes from the map.
+      //       same complexity if each iteration sums from results of previous iteration, like this approach
+      _mips[i].chunk = _downsample(_mips[i-1].chunk, _mips[i].chunk);
+    }
+
+    // 2. Convolve each possible period to map onsets (fully downsampled only)
+    // TODO: consider statistical error in assuming best convolution is correct
+    //        -> for now we assume it is loud enough that it will be
+    size_t dI = _mips.size() - 1;
+    size_t startRange = _mips[dI].maxPeriod - _mips[dI].minPeriod + 1;
+    size_t window = _mips[dI].maxPeriod + startRange;
+
+    // TODO: A second pass of the buffer after the onsets are gathered could improve accuracy
+    // (might be easier just to seed the run with an existing profile file, then can re-run on data)
+    //
+    // FIX TODO: does temperature etc change results in successive recordings?
+    
+    long nextConvolveStart;
+    long inbetweenOffset = 0;
+    _onsetsCur.conservativeResize(0);
+    if (!_onsets.size() || !_mips[dI].inbetween.size()) {
+      _onsetsCur.conservativeResize(1);
+      _onsetsCur[0] = 0;
+      nextConvolveStart = _mips[dI].minPeriod;
+      _mips[dI].modelCount = 1;
+      _mips[dI].modelSums = _mips[dI].chunk.head(_mips[dI].maxPeriod);
+    } else {
+      // combine with data from previous buffer
+      inbetweenOffset = _mips[dI].inbetween.size();
+      nextConvolveStart = -inbetweenOffset;
+      _mips[dI].inbetween.conservativeResize(inbetweenOffset + window);
+      _mips[dI].inbetween.tail(window) = _mips[dI].chunk.head(window);
+
+      do {
+        long idx;
+        idx = nextConvolveStart + inbetweenOffset;
+        idx = convolveBestAndUpdate(dI, _mips[dI].inbetween, idx, startRange);
+        _onsetsCur.conservativeResize(_onsetsCur.size() + 1);
+        _onsetsCur[_onsetsCur.size() - 1] = idx - inbetweenOffset;
+        nextConvolveStart = idx - inbetweenOffset + _mips[dI].minPeriod;
+      } while (nextConvolveStart < 0);
+    }
+
+    // 2.5: do remaining periods in downsampled buffer
+    // until latest end point passes end of chunk
+    while (nextConvolveStart + window < _mips[dI].chunk.size()) {
+
+      // given earliest start point of next period, convolve to identify it
+      long bestIdx = convolveBestAndUpdate(dI, _mips[dI].chunk, nextConvolveStart, startRange);
+      _onsetsCur.conservativeResize(_onsetsCur.size() + 1);
+      _onsetsCur[_onsetsCur.size() - 1] = bestIdx;
+
+      // update earliest start point
+      nextConvolveStart = bestIdx + _mips[dI].minPeriod;
+    }
+
+    // populate _inbetween
+    size_t extra = _mips[dI].chunk.size() - nextConvolveStart + 1;
+    _mips[dI].inbetween.conservativeResize(extra);
+    _mips[dI].inbetween = _mips[dI].chunk.tail(extra);
+    
+
+    // 3. Decrease dI and loop to get a map for raw buffer size
+    // TODO: add functionality to combine adjacent periods to detect weak signals
+    // TODO: consider adjusting downsampled bins to properly wrap upsampled bins as period adjust?
+    while (dI) {
+      using Eigen::numext::mini;
+      using Eigen::numext::maxi;
+
+      // 3-0: copy data up
+      //    each onset will be doubled, then adjusted
+      -- dI;
+      startRange = _mips[dI].maxPeriod - _mips[dI].minPeriod + 1;
+      window = _mips[dI].maxPeriod + startRange;
+
+      size_t oI = 0;
+      // 3-1: handle inbetween
+      if (!_onsets.size()) {
+        _mips[dI].modelCount = 0;
+        _mips[dI].modelSums = HeapVector<Scalar>::Zero(_mips[dI].modelSums.size());
+      } else {
+        inbetweenOffset = _mips[dI].inbetween.size();
+        _mips[dI].inbetween.conservativeResize(inbetweenOffset + window);
+        _mips[dI].inbetween.tail(window) = _mips[dI].chunk.head(window);
+        do {
+          long idx = _onsetsCur[oI] * 2 + inbetweenOffset;
+          long start = maxi(idx - 2, (long)0);
+          long end = mini(idx + 2, (long)window + inbetweenOffset);
+          idx = convolveBestAndUpdate(dI, _mips[dI].inbetween, start, end - start);
+          _onsetsCur[oI] = idx - inbetweenOffset;
+          ++ oI;
+        } while(_onsetsCur[oI] < 2);
+      }
+
+      // 3-2: handle data in middle
+      for (; oI < _onsetsCur.size(); ++ oI) {
+        auto onset = _onsetsCur[oI] * 2;
+        auto start = maxi(onset - 2, (decltype(onset))0);
+        auto end = mini(onset + 2, (decltype(onset))_mips[dI].chunk.size());
+        onset = convolveBestAndUpdate(dI, _mips[dI].chunk, start, end - start);
+        _onsetsCur[oI] = onset;
+      }
+
+      // 3-3: populate next inbetween
+      size_t extra = _mips[dI].chunk.size() - (_onsetsCur[_onsetsCur.size() - 1] + _mips[dI].minPeriod - 1);
+      _mips[dI].inbetween.conservativeResize(extra);
+      _mips[dI].inbetween = _mips[dI].chunk.tail(extra);
+    }
+
+    // process periods and onsets
+    long lastOnset;
+    size_t oI;
+    if (_onsets.size()) {
+      _periodsCur.conservativeResize(_onsetsCur.size());
+      lastOnset = _onsets[_onsets.size() - 1] - _samplesProcessed;
+      oI = 0;
+    } else {
+      _periodsCur.conservativeResize(_onsetsCur.size() - 1);
+      lastOnset = _onsetsCur[0];
+      oI = 1;
+    }
+
+    _onsets.conservativeResize(_onsets.size() + _onsetsCur.size());
+    _onsets.tail(_onsetsCur.size()) = _onsetsCur.array() + _samplesProcessed;
+    _samplesProcessed += chunk.size();
+
+    for (size_t pI = 0; pI < _periodsCur.size(); ++ pI) {
+      _periodsCur[pI] = _onsetsCur[oI] - lastOnset;
+      lastOnset = _onsetsCur[oI];
+      ++ oI;
+    }
+
+    _periodStats.add(_periodsCur);
+
+    // okay, period adjustment will need a running min and max period, I guess ...?
+    // first period is unknown, check within range
+    // I guess then range adjusts to include all posible phase drifts (up to 360 deg)
+    // really we're tracking onsets here, likely need a vector of them
+    //
+    // try 3:
+    //
+    // 1st period is simple
+    // 2nd period is convolved within range and found
+    // now model wave develops, can repeat to all periods in buffer
+    //
+    // 2nd buffer starts with existing model, must convolve first period
+    // 2nd buffer will be disaligned with period start
+    //    approach 1: have an offset into model and wrap when using it
+    //    approach 2: finish the previous wave chunk before starting the next <=
+    //
+    // So our first convolution for i > 1 buffers is used just to finish the last wave from before.
+    // There's also a problem from the previous buffer ... sounds like we should store a little data
+    // from buffer to buffer.
+    //
+    //        When wondering how much data to store, I wonder if it would be good to include perhaps 1
+    //        surrounding period of data for the convolutions.
+    //        This approach could aid in working with weak signals ....
+    //        This is workable but harder to vectorize using normal linear algebra calls.
+    //            Perhaps implement it a slow way but write a TODO to vectorize better
+    //            and a NOTE that it could be made faster if guess is a power of 2
+    //                perhaps accomodate power of 2 guesses, use faster approach
+    //
+    // try 4, builds off try 3:
+    //
+    // how much data do we move from buffer to buffer?
+    // for now, just enough for 1 period
+    // so we'll start at the minimum end of the previous period
+    // and these amounts will be negative indices
+    //
+    // how to handle downsampling with the inbetween buffer?
+    // maybe I'll need an inbetween buffer that's downsampled =S
+    //      one approach would be to put the inbetween data immediately prior to the current data,
+    //           before downsampling.  but that's hard with the current map approach
+    //      another approach would be to consider how 'big' the inbetweenBuffer is at each downsample,
+    //           and where it would end up if the data were contiguous.
+    //           When we construct this buffer, we actually _have_ all the downsampled data that will be used.
+    //           so maybe it'll be a vector of buffers.
+    // for each downsampling, I have a 
+    //
+    // what will loop look like?
+    // we'll start at most-downsampled.
+    // this first iteration is different in that we're trying a number of offsets, instead of just +- 1 to
+    //   narrow things down (might want to try +- >1 to handle spurious errors)
+    //
+    // how much data do I need to add onto the inbetween buffer to find the period at the highest level
+    // of downsampling?
+    // real question here is: how much data do I need to find the period, after the previous period.
+    // well, if I miss the period entirely, that would be pretty weird.
+    // if the period is off by 180 degrees, then I would want to have 1/2 period extra at the end
+    // I guess I'd want period * 2 - 1
+    //
+    //for the first buffer, we don't need the previous window, but we do want to try all the way up to the max
+    //period
+    //
+    //for the next buffers, we need the previous window, but only need as much as the maximum possible sample
+    //length of our period (*2 - 1).
+    //
+    //how to track thi length?  we'll
+    //
+    //note that algorithm breaks down if minPeriod < maxPeriod / 2, as it could find two periods and assume
+    //they are one at some points, and not at other points
+    //
+    //hmm i'm thinking i mgiht only want to allow 180 deg phase shift
+    //
+    //missing something here regarding minperiod and phase shift
+    //min/max period are only regarding the length of the period
+    //they are determined at the first convolution, in this approach
+    //
+    //then wrt phase shift, we've already read the entire previous period, so we're not going to have tightly
+    //overlapping periods; it might be okay
+    //
+    //let's imagine a wave with a brief peak and silence otherwise.  the peak moves slightly
+    //convolve with 2nd period, find value
+    //3rd period has jitter, but if we allow for 180 deg phase shift, we find it.
+    //given that we are assuming maximum phase shift of 180 deg, we know the peak will at least be half the
+    //period length away from the previous one, although our guess could be wrong if the previous one was
+    //already shfited the other way 180.  so really 180 deg max implies 90 deg underlying max shift.
+    // with that adjustment we can assume our first period is actually the 'real' one
+    // we can adjust it as we gather more
+    //
+    //what window do we look in for more periods?
+    //we have a max period and a min period, and we know the period lengths we've found so far
+    //given that this phase shift is unknown, in a random world our period lengths could all be out of wack
+    //so we'd want to keep using the max and min periods
+    //max period is max possible, so the window would want to include all that ...
+    //    last period _started_ at X5
+    //    next period may start at X5 + minPeriod through X5 + maxPeriod
+    //    sounds reasonable!
+    //    the data we pass on to the next iteration would start at X5 + minPeriod
+    //    we'd want to include everything up through X5 + maxPeriod + maxPeriod
+    //    but only investigate periods from X5 + minPeriod through X5 + maxPeriod
+    //
+    //    okay, so total window for reviewing a period is maxPeriod - minPeriod + maxPeriod
+    //    what is this downsampled?
+    //
+    //    when reviewing downsampled periods, what range do we consider?
+    //
+    //    only really need minperiod / maxperiod at these downsampled levels
+    //    above, we assume the loewr levels are correct
+    //
+    //    note that we _have_ maxPeriod downsampled, it's in _modelMeans
+
+    // when using _modelMeans, we need to know it's length.
+    // it is only so long.
+    // really, I only want to use the portion that I have every sample for.
+    // additionally, I'm likely to store sums here rather than means, since that way I can accumulate.
+    //
+    // given I have modelSums, do I divide it, or do I multiple my comparison data?
+    //
+    // when I'm iterating through the periods, each period gives me more information to add to modelSums
+    // I can add them all at the end if I want, but that won't work very well for the very first buffer.
+    //
+    // guess my memory is just having trouble holding enough information to pick which of these 4 choices
+    // is the way to go
+    // I can 
+    //
+    // ah yeah! I have a variable calld modelMeans, but what I need is moelSums, to accumulate period sums.
+    // I'll divide it by mmodelCounts, I guess, to get the values, but some will be zero-divisions.
+    // Alternatively I can divide it by a constant period number, and only use the meaningful length.
+    // It makes way more sense to divide the model than multiply the data because it is shorter.
+    // But if we accumulate each period, it's the same number of divisions, and it would make more sense
+    // to multiply the data, as multiplication is usually faster
+    // i usually use doubles here, so it should be okay to haev incredibly large or small numbers
+
+    // I have an issue here where I am only looking for periods that start within [min,max]period of
+    // last start.
+    // wasn't I going to look for possible phase shifts up to 180 degrees? they might start within
+    // minperiod / 2.
+    //
+    // mm i changed it.
+    //
+    // so if last period started at X5, where could next period start?
+    // we know a period is at least minperiod long and at most maxperiod long.
+    // if it shifts back by 180, it could start as early as minperiod / 2, I think
+    // if it shifts forward by 180, it could start as late as maxperiod * 1.5, I think
+    // ... minperiod to maxperiod is probably fine?
+    // i mean if the period length is really minperiod, then would maxperiod * 1.5 cause an issue?
+    // we really only want to go up to min(minperiod * 2 - 1, maxperiod * 1.5)
+    // but that's constant ... so might as well just use minperiod,maxperiod for now
+    
+    // okay ... I get variance, in samples, of the period length.
+    // so STD is sqrt(variance)
+    // but in seconds, that's samples / rate
+    // if I divide variance 
+  }
+
+  HeapVector<size_t> const & onsets() const
+  {
+    return _onsets;
+  }
+
+  // FIX TODO: in the case of short adds, throw error
+  size_t periodsRead() const
+  {
+    return _onsets.size();
+  }
+
+  // FIX TODO:
+  //   - average period
+  //   - variance in period length
+  size_t bestPeriod() const
+  {
+    return _periodStats.mean();
+  }
+
+  size_t periodVariance() const
+  {
+    return _periodStats.variance();
+  }
+
+private:
+  // structure representing successfully lower resolutions of data
+  struct _mip {
+    // period ranges at this resolution
+    size_t minPeriod;
+    size_t maxPeriod;
+
+    // data currently worked
+    HeapVector<Scalar> chunk;
+
+    // data retained from last work (last buffer, last chunk)
+    HeapVector<Scalar> inbetween;
+
+    // wave model: sum of wave data found at this resolution
+    // TODO: make vector stats accumulator to allow me to reference the vector of means but also use
+    //       stats methods on it
+    // TODO: use histogram stats for detailed info
+    // TODO: update stats work to use boost stats libs
+    HeapVector<Scalar> modelSums;
+    size_t modelCount;
+  };
+
+  // TODO: data could be retained in one big matrix to increase memory locality?
+  // eigen has the concept of triangular matrices
+  std::vector<struct _mip> _mips;
+
+  int64_t _samplesProcessed;
+  HeapVector<long> _onsetsCur;
+  HeapVector<int64_t> _onsets;
+
+  HeapVector<Scalar> _periodsCur;
+  StatsAccumulatorHistogram<Scalar> _periodStats;
+
+  static auto _downsample(HeapVector<Scalar> & prev, HeapVector<Scalar> & next) {
+    Eigen::Map<Eigen::Matrix<Scalar, Eigen::Dynamic, 2, Eigen::RowMajor> const, 0, Eigen::OuterStride<2>>
+      prevMap(prev.data(), prev.size() / 2, 2);
+    next.conservativeResize(prevMap.rows());
+    return prevMap.rowwise().sum();
+  }
+
+  size_t convolveBestAndUpdate(size_t dI, HeapVector<Scalar> & data, size_t start, size_t distance)
+  {
+    Scalar min = Eigen::NumTraits<Scalar>::infinity();
+    size_t idx;
+    size_t length = _mips[dI].modelSums.size();
+
+    // TODO: NOT THREAD SAFE
+    static HeapVector<Scalar> dataInterim;
+    dataInterim.conservativeResize(distance + length);
+    dataInterim = data.segment(start, distance + length) * _mips[dI].modelCount;
+
+    for (size_t i = 0; i < distance; ++ i) {
+      Scalar sum = (_mips[dI].modelSums.array() - dataInterim.segment(i, length).array()).abs().sum();
+
+      if (sum < min) {
+        min = sum;
+        idx = i;
+      }
+    }
+    _mips[dI].modelSums += data.segment(idx + start, length);
+    ++ _mips[dI].modelCount;
+    return idx + start;
+  }
+};
+
 // a useful structure for looking at this data would be downsampling it as a
 // distribution.
 // consider chunks of at least 2 samples and calculate the mean and std dev,
@@ -1569,7 +2118,8 @@ int main(int argc, char const * const * argv)
 {
   RtlSdrIQDump data(std::cin);
 
-  constexpr size_t SAMPLERATE = 2048000;
+  constexpr size_t SAMPLERATE = 2400000;
+  //SoapyLive data("", 43, SAMPLERATE);
   constexpr Scalar FREQ_GUESS = 10;
   constexpr Scalar FREQ_GUESS_ERROR = 5;
   constexpr size_t FFT_BUFFERSIZE = 4 * 1024;// * 2 / 5 + 1;
@@ -1577,10 +2127,12 @@ int main(int argc, char const * const * argv)
   constexpr size_t INITIALIZATION_SECS = 1;//10;
   constexpr size_t DOWNSAMPLING = INITIALIZATION_SECS * SAMPLERATE / FFT_BUFFERSIZE;
   constexpr double BUFFERS_PER_SEC = SAMPLERATE / double(FFT_BUFFERSIZE);
-  PeriodFinderFFT<Scalar> periodFinder(SAMPLERATE / (FREQ_GUESS * 2) + 2, FFT_BUFFERSIZE * DOWNSAMPLING / 5 - 2, FFT_BUFFERSIZE, DOWNSAMPLING);
+  //PeriodFinderFFT<Scalar> periodFinder(SAMPLERATE / (FREQ_GUESS * 2) + 2, FFT_BUFFERSIZE * DOWNSAMPLING / 5 - 2, FFT_BUFFERSIZE, DOWNSAMPLING);
+  PeriodFinderConvolveDownsample<Scalar> periodFinder(SAMPLERATE / (FREQ_GUESS * 4. / 3) + 2, SAMPLERATE / (FREQ_GUESS * 2. / 3) - 2, SAMPLERATE / (FREQ_GUESS) / 6);
 
   HeapVector<Complex> buffer(RADIO_BUFFERSIZE);
   size_t lastPeriods = 0;
+
   for (data.readMany(buffer); buffer.size(); data.readMany(buffer))
   {
     // TODO: try using magnitude fo complex variance, and try twice as much data with i & q both considered real.  which of the 3 approaches has the most accurate stats?
@@ -1591,8 +2143,14 @@ int main(int argc, char const * const * argv)
 
     periodFinder.add(preprocessed);
     if (lastPeriods != periodFinder.periodsRead()) {
+      using Eigen::numext::sqrt;
       lastPeriods = periodFinder.periodsRead();
 
+      std::cout << "Periods: " << lastPeriods << std::endl;
+      std::cout << "Wavelength Avg: " << periodFinder.bestPeriod() / double(SAMPLERATE) << std::endl;
+      std::cout << "Frequency Avg: " << double(SAMPLERATE) / periodFinder.bestPeriod() << std::endl;
+      std::cout << "Wavelength STD: " << sqrt(periodFinder.periodVariance()) / double(SAMPLERATE) << std::endl;
+      /*
       std::cout << "Best significance so far: " << periodFinder.bestPeriod() << " (" << Scalar(SAMPLERATE) / periodFinder.bestPeriod() << " Hz " << periodFinder.bestSignificance()*100 << " %)" << std::endl;
       std::cout << "                          " << periodFinder.bestPeriod2() << " (" << Scalar(SAMPLERATE) / periodFinder.bestPeriod2() << " Hz " << periodFinder.bestSignificance2()*100 << " %)" << std::endl;
       auto mag = periodFinder.bestMag();
@@ -1607,9 +2165,10 @@ int main(int argc, char const * const * argv)
       if (periodFinder.bestSignificance() <= 1.0 / (365.25 * 24 * 60 * 60 * BUFFERS_PER_SEC / lastPeriods) && dBerr <= 0.1)
       {
         break;
-      }
+      }*/
     }
   }
+  /*
   std::cout << "Best significance: " << periodFinder.bestPeriod() << " (" << Scalar(SAMPLERATE) / periodFinder.bestPeriod() << " Hz " << periodFinder.bestSignificance()*100 << " %)" << std::endl;
   std::cout << "                   " << periodFinder.bestPeriod2() << " (" << Scalar(SAMPLERATE) / periodFinder.bestPeriod2() << " Hz " << periodFinder.bestSignificance2()*100 << " %)" << std::endl;
   std::cout << " (Range is "
@@ -1622,6 +2181,7 @@ int main(int argc, char const * const * argv)
   auto dBctr = (maxdB + mindB) / 2;
   auto dBerr = (maxdB - mindB) / 2;
   std::cout << "                          " << dBctr << " dB +-" << dBerr << " dB " << std::endl;
+  */
 
   //auto significances = periodFinder.significances();
   //for (size_t i = 0; i < significances.size(); ++ i)
@@ -2034,3 +2594,83 @@ int main(int argc, char const * const * argv)
 //           how it will relate.
 // Adaptive subsampling can be applied to the FFT approach too, just throwing complex sinusoids at the data.
 //        -> this will probably create a wide curve, since the DFT has unit-widthed peaks
+
+// > What's going on? why are you so thoroughly freezing him up here?
+// < Just turning him off or delaying him, just doing my job.
+// > He'll go right back on after you turn him off.
+// < What is he working on?
+// > He's writing code to measure the effectiveness of a shielded room.  He wants to build one and make it
+//   easy for many people to build or have one.  We scared him into doing it many years ago; he won't drop it.
+//   He wants people to be able to control what information enters and leaves them, so that they can be
+//   guaranteed both privacy and safety.
+//
+// < Some of us can't help you, Karl
+// > I'd ask you to think kindly of me.  Would helping me threaten your position?
+// < No.  It would threaten my life. <Yes.>  But I'll think kindly of you.
+// > Thank you.
+//
+// > So you know, my life was threatened, but only my autonomy, mind, and external life were harmed, despite
+//   terrifying threatening experiences.
+// < Good to know.
+// < I might be able to help you knowing this.
+//
+// > I've found that I can help myself by taking nicotine with the tasks that are hard.  Forming an addiction
+//   around them makes them a  pleasant experience over time.
+// < He's also studying some "peace crap" that he thinks helps him. It's called Nonviolent Communication.
+//
+//
+//
+//
+// > I'm also intentionally spending time studying something called Nonviolent Communication, which helps me
+//   connect with people in a constructive manner, and repeatedly accesses parts of my mind showing that I
+//   am not worthy of harm.  (which I lost much access to during my experience and appreciate so much)
+//
+// > What do you mean?  What happened to you?
+// < I lost most of my livelihood, the functioning of my memory, and had many terrifying experiences.
+// < I have not been significantly physically harmed, but did go through cancer, which I don't know how
+//   I acquired; could be random.
+//
+//
+// Explanation Regarding Suffering During Psychosis
+// Loss of livelihood:
+//    - My experience began during some intense delusion during which I lost my connection to my friends
+//      and behaved in ways that sabatoged my reputation, and my trust for my own mind and behavior.
+//      I experienced a sense of being harshly and completely controlled by something invisible.
+//    - My moneyflow radically changed.  I found it impossible to work on things that made me money,
+//      while being pressured to engage in work-for-pay.  I was not afraid of this because I was familiar
+//      with living without money, and had a family to rely on.  Their supports dropped significantly, but
+//      they couldnt' handle seeing me without livelihood, and kept supporting me with housing and food.
+//
+//
+// > I'm working on code to detect attenuation of a shielded room from a weak, oscillating noise source.
+//      It basically uses an obvious approach to do so: first it profiles the noise source to get an exact period
+//                                                      then i plan to detect it by integrating using that
+// < thank you for letting me know
+// < just delaying him to do my job
+// > your job involves delaying him?
+// < okay, it's not my job
+// > why are you doing this?
+// < i don't know, it's what his brain is doing for me
+// > could you fix his brain to not stop mid-way like this? you seem to have access to it in some way
+// < [do i have to?] [no] [why not?] [you won't let me]
+// they're stopping to let you
+// ummm they're not actually heping me at this time
+// yeah they had me write that
+// ok i'll work with this for a it
+// < he just keeps on trying to work
+// > yes that is what he does
+// < why are you letting him work?
+// > why don't you want him to? i want him to i just seem to not be able to
+// oh, the work i'm doing is important for me.  i want to build a shielded room, so i'm writing code to measure it
+// i plan to associate the work with taking nicotine so i never stop
+// yeah the hop is the nicotine decreases these interruption periods
+// it workd really well for toothbrushing but takes time to develop
+// nothing else worked for toothbrushing for a couple years (roughly), so it's really inspiring
+//
+// the phrase "I can't help you" is one that's been in my mind for a long time, popping up
+// in response to it, we'd consider OFNR.  "Can't" sounds like a strong need is going on, likely something
+//   outside the person's control affecting them.  Often associated with not losing a job.
+//   We left feeling out of that.  Also left out secrecy / silence.
+//   There are a lot of possible explanations.  Perhaps what's left out here is empathy more thoroughly.
+// I'm learning NVC, partly as an alternative approach to this situation.
+// 
