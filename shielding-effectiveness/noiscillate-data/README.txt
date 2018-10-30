@@ -35,3 +35,21 @@ I had to move the setup a ways to connect it to the big antenna.
 I was running on a raspberry pi, so there could have been samples dropped due to write delay.
 
 Karl
+
+2018-10-15
+
+I'm attempting to measure how measured wavelength of an emitter changes from recording to recording.
+2018-10-15_noiscillate-40hz-500mhz-active-close_broken-rtlsdr-3-hot.iq
+    tuned to 500 mhz, emitter is 40hz, equipment is broken and antenna must be placed right against emitter to see it; recording with dongle hot
+    sample rate set to 2400000 Hz
+      Periods: 23998
+      Wavelength Avg: 0.02500093659276854
+      Frequency Avg: 39.998501507709413
+      Wavelength STD: 4.958333333333333e-05
+2018-10-15_noiscillate-40hz-500mhz-active-close_broken-rtlsdr-3-cold.iq
+  I placed the dongle in the fridge for a bit, then tried recording with it, the same setup:
+      Periods: 23998
+      Wavelength Avg: 0.025000955952827437
+      Frequency Avg: 39.998470533959996
+      Wavelength STD: 3.1250000000000001e-05
+    More accuracy, but mean wavelength has changed slightly, perhaps due to PPM.

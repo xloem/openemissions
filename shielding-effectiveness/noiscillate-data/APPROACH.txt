@@ -1,0 +1,476 @@
+1. ::: PeriodFinderConvolveDownsample :::
+  We want to profile the signal when it is loud.
+  Given a profile, we can determine the weakest we can detect given our detection approach.
+  1. downsample to H * 2
+  2. Convolve each possible period to map onsets
+      Use gaussian stats bins and mark a TODO to reference actual underlying data for more precise stats
+  3. Decrease downsampling and loop to 2 to get a map for raw buffer size
+      Mark a TODO to store detailed stats information on onsets to report precise situation
+      Mark a TODO to consider adjusting downsampled bins to properly wrap upsampled bins
+  4. update data storage
+
+      -> before settling on this, let's measure multiple runs to determine if frequency stays constant
+
+      3 separate files stored such that they may be written to live
+      - wavefile -> stores information on signal
+          - avg period
+          - max precision of avg period
+          - std deviation of period if greater than sample time present
+          - add TODO: store model wave
+              - add TODO: consider array of underlying frequencies and store detailed distributions for each possible frequency component, adjusting properly for phase drift
+                DON'T do this now it will slow you down
+          - refs to recfiles
+      - recfile -> stores information on a recording of signal
+          - ref to logfile
+          - list of onset times
+      - logfile
+          - raw recording of samples in standard format
+          - information like frequency tuning and recording timing would go here, NOT in the recfile
+            this is to keep the recfile specific to the profiling behavior; this is a standard format
+            these are kept separate files so they may be streamed to live
+  5. Can accumulate more buffers and continue
+  
+
+2.
+  Once we have a profile, we can use a simple detection approach to measure it.
+
+  1. hold a buffer of gaussian distributions for wave + background
+     add TODO to consider if the distributions are non-gaussian?
+  2. use power/mag convolution to phase-align with profile
+  3. compare difference from PEAK to identify magnitude of underlying wave
+     add TODO to consider a more general concept of peak a non-magnitude information
+  add TODO to work to resist possible corruption attack by using data from multiple sources
+
+3.
+  What do we do when it doesn't work?
+    1. when ROOT downloads, spend 7 minutes building an example, 7 minutes building a charting example, and 7 minutes trying to make a moving charting example; then 7 more minutes time buffer
+          if doesn't work after 28 miuntes, try VTK
+
+
+== monologue cruft ==
+
+PROFILING APPROACH
+- FFT will find signal easily.  This can rapidly give approximate period.
+      How does FFT narrow period?
+      1. a longer buffer gives more accuracy slowly
+          needs TIME and MEMORY
+      2. including harmonics gives more accuracy rapidly
+          needs ALGORITHMS, TIME, and LOUDNESS
+
+- Downsampling: low-memory binary search
+    
+
+FFT HARMONIC: any way to differentiate signal from noise easily, to identify real harmonics?  quic
+
+
+  approach monologue
+      if I assumed that loud harmonics were real, then I could just pick the one that gave the best accuracy
+      Given this best accuracy range, I could then use a different approach with this narrower range.
+
+SCRATCH THAT!  let's convolve downsampled data
+
+  approach monologue
+      If the signal is very loud, I should be able to find it exhaustively by downsampling less and less.
+      Downsampling limits the areas I need to search; so say we downsample to freq * 4: we'll have 4 bins,
+      4 samples, per period, can identify peak and trough in these four.
+      It's LOUD, so we can do this before phase drift happens too much.
+      Then decrease the downsampling by 2, and we know have a range to narrow down the metrics over.
+
+
+    this could even work when signal is weak
+
+
+    so, sample rate is S, guess frequency is H
+    downsample to S / 2 / 2 / 2 ... until S is < H * 8 or somesuch
+
+    how do we determine how much data to accumulate?
+    -> if signal is loud enough, only need 1 period.  multiple periods only needed to accomodate variability in phase or frequency.
+
+    STATS: variability in phase and period.
+      I'll need to make an assumption about how the signal will behave in the future.
+      Part of this can be based on understanding of the signal.  If it is driven by a hardware clock, it will only jitter as much as the clock and hardware details do.
+      If it is driven by a multiprocess cpu, it may jitter arbitrarily.
+      Let's assume that jitter is gaussian. (alternative we could measure its distribution)
+
+
+      Shifting =)
+      So, one period has a best-guess phase.
+      We convolve the nxt period to find its drift.
+      On and on for each period.
+
+      We make the assumption that the signal is louder than background noise, implying that each convolution is correct.
+      If background noise is gaussian, some will be wrong, but we can investigate signal judgement in future to determine stats metrics.
+
+   Result -> at sample rate D (downsampled from S) we have a map of all periods in buffers.
+   Then upsample (total size is n log n ram used, or could recalc) to narrow down, with more convolving.
+   Then we have a final map of each period in the signal.
+
+   Do we want to use stats bins for this convolution?  We could.
+        Hmmmm what existing stats bins do I have?
+        I one that assumes gaussian and only stores metrics; that would be lightweight.
+            Later references to underlying data could be added
+
+    If we use gaussian stats bins, then each downsampled bucket is composed of multiple upsampled buckets.
+    When we add samples, we can add them to downsampled bins as well as upsampled bins.
+    As things become more precise, do we want to adjust the downsampled bins?
+
+  Once the end-result, after N buffers are processed this way?
+    We have a mark for the time start for every wave onset.
+    We have a sampled distribution of periods given the differences between these time starts.
+    This distribution has an average to a given precision, over a given time.
+      Best precision of average is precision of 1 value multiplied by period count?
+
+      So 1 value has a precision +- sample time.
+      As we add more waveforms, each one divides sample time by count.
+      This is best precision.
+
+  Data storage:
+    good to get in the habit of storing things in a way that if power is lost data is retained
+    so at head of file, keep updating period length, and std deviation, maybe some extra spots for additional metrics
+        - average period length
+        - max possible precision
+        - standard deviation
+    file could reference other files that include raw waveform and marks for wave onset guesses
+
+    std dev could lie!
+      each individual period has its own accuracy.
+
+    So we have a set of onsets that are only +- the sample time.
+    We can infer the average of the underlying distribution, but its hard to easily infer details if they are smaller than the sample time.
+    Std deviation sounds most interesting if it is larger than the sample time.  Under that, we're just seeing the sampling error.
+
+    What we'll need to infer when to give up in the detecting half will a concept of the _minimum_ precision of the period.
+    This will let us infer when we cannot detect the data.
+
+    Two options:
+      1. period deviates more than sample time.  given distribution of this deviation, is possible signa is gone.  is also possible it is still around; more likely
+      2. period deviates less than sample time.  Not enough information to determine how much period may drift outside of profile time.
+
+        (although with multiple recordings we could measure drift, this would be the same as the deviation exceeding the sample time.  it's just a longer recording)
+      Given option #2, it seems we'd assume the maximum precision is the minimum precision.  The signal is gone when it will no longer constructively interfere with itself.
+    
+
+DETECTION APPROACH
+
+  TODO: update metafile once signal is found.  will require metafile to reference multiple logfiles.
+  TODO: store model of signal details that updates as more data is found
+
+  - keep a wave buffer of correct size
+  - use period to categorize samples into wave buffer
+  
+  wave buffer could be raw averages, or more detailed metrics such as std dev, or even a matrix of histograms
+
+      Now, histograms are reasonable because the samples have a small resolution.
+      However, histograms don't account for changing in recording conditions
+
+    Profile data would ideally REMOVE background noise !  how the heck would we do that?
+
+          I think it is doable by deconvolving the distributions.
+          We'd need a distribution of background noise.
+          We'd have to extract it from the signal
+
+    it is notable that if your signal is very loud you can record it and just ignore the background noies x >> noise
+        consider a little more strongly holding details of the variation in the signal.
+        
+    this variation is recorded in the reference to the logfile and the onset times marked in the metafile, as precisely as is possible
+    producing a summary of it is useful for detection, but the detector could do it
+        it fits in to the conceptual domain of the profiler
+      that's correct
+
+    maybe allow some space in the metafile for extra data, somehow
+    
+    but what right now to use for the detector?
+    so, with a reference to the profile data, we have some signal data ...
+  
+    we can model the signal and compare to the recording and update the profile file.  this will be useful later.
+
+    but for now we just need to know the precise period and determine the magnitude of our signal given that period
+    once we identify we have the signal, we can actually update the metafile with more precision (TODO for later)
+
+    okay, so we'll have to form some model of the signal.
+    we have signal + background noise
+    I think I figured this out already, somewhat.  Maybe a plan is to look through my existing code and try to reuse whatever my approach was.
+    It involved combining distributions that were either histograms or gaussian; using stats properties i googled but don't quite understand
+
+        if we have an arbitrary signal, we can look at the extrema: highest point and lowest point
+        how will these extrema move, in the presence of background noise, as the magnitude of the signal changes?
+
+        if we are phase-aligned, then we can use signed data, and the average of the data will represent the underlying value; since the background signal is noise
+        we could then assume that our recording is proportional to the model and the profile
+
+      once we are phase-aligned, then we know our period very precisely.
+
+        so, for a real signal, that's relevent: here my signal is noise itself.
+        phase-aligning may not help here.
+
+      the signal mostly does not repeat, just the mean of its amplitude
+        likely the signal will have some phase-aligned portions as power is provided and cut to toggle it
+
+      so I have a big set of recordings, and my informationo n them has to do with their distributions, so distribution math makes sense
+
+      when the noise is active, we have B + F (background + foreground)
+      when the noise is inactive, we have only B
+      we have a ton of samples, and we can convolve the mean of the magnitude or power with the model to find the phase
+
+      the question is what is the intensity of the signal?  how much has it been attenuated?
+      if the background were weak enough, we could juts take the magnitude of the signal as its magnitude
+      but once it gets smaller than the background noise, we'll need to use stats
+
+      So first we phase-align it
+      then we collect a distribution of signal noise, and a distribution of background noise
+
+      there's an idea here that i like of collecting such distributions also during the profiling phase, which could make the code more general and yield a deeper understanding of the signal
+
+      but for noiscillate, we could assume that the peaks and valleys are flat -- IF the underlying signal actually behaves that way.  it's likely at least to be a good approximation
+        there could be a sudden burst at start or stop that would make that slightly inaccurate, but it should be fine
+
+        let's try pursuing this a little
+        a signal will have consistent components and random components
+          we could model each point in waveform as a distribution with a mean
+          if the signal is attenuated, the mean will shrink, and the variance of the distribution will shrink, I think, something like that
+
+          so given that model of each sample in the wave having a distribution, we could compare it
+
+        the problem is that these are complex-valued signals recorded with an SDR.
+        so if there was an underlying signal, it would need to be phase-aligned to show up on such a distribution
+
+          a signal is made of a sum of fourier components
+          each of these components has a separate phase and will drift by a known/different amount
+          you can break these into pieces and track them all
+          because they drift within known amonts
+
+        okay now I'm thinking a 3-dimensional model of a signal ... yes.
+        
+        nice =D
+        okay each point in time has a spectrum, and each spectrum has a distribution
+        
+        to do this I think I would need to 1st determine the precise period based on the changes in power
+        given the precision of that period, I know the phase drift
+        
+            phase also relates to underlying accuracy of period, unforunately and fortunately
+              that sounds complex, TODO: think about that
+          if we assume the period is more accurate than the length in time of an individual piece of the wave (which is actually reasonable), then:
+            we can calculate the samping error for each recording of the wave
+            and adjust to line up the periods.
+            we can then separate each sample into a known average, which is a complex number, and background noise.
+            we'll have to try this for the spectrum of frequencies the device might emit.
+
+            TODO: identify sampling error for jittering signals, noting that it would be easy to jitter a signal to make this technique not work until this is done
+            NOTE: if a device were _hidden_ and emitted a _repeating_ signal from some component, randomizing delays in the signal would make the details cancel themselves out.  it would make it much harder to find it
+                  from anything other than its power.
+
+Profile #2:
+    This profile approach attempts to begin to separate underlying signals from noise.
+    What's available in the result gives a clue into what the underlying period jitter is; components that are a higher frequency than the jitter will fade away following a precise curve.
+    
+    Can I quickly add this, or is it silly?
+        It's reasonable because the device may not actually give square wave noise.  But not much should be needed.  A plot of just thep ower without phase information would be sufficient.
+        WHEW.
+
+Okay, detecting power.
+    The model wave can be considered a sequence of distributions.  Background noise could be ignored since it will be small, but note that we'll have background noise in the detection phase, so it's reasonable to consider.
+
+    Peak and trough of model can all be considered B + F(x) wrt power.
+    both B and F are distributions.
+    All we have are the B+F(x) = T(x) distributions; but each T(x) contains B(x)
+    So the solution here has to do with how the underlying distributions sum.
+    If they're gaussian, it's not that hard.
+    If they're not ... convolution lets us add and subtract them, but that's the only technique I have offhand.  Some quick way to do it?
+          I could add them all and get n*B + sum(F) ...  B is now much stronger than F.  The average of the resulting distribution is likely to be much closer to the average of B than the average of F.
+        
+
+
+        what does this mean ... T(x) is a distribution of +- real values.
+            B(x) is a distribution of +- real values
+            F(x) is a distribution of +- real values
+            
+          when I add a distribution, what does it mean?
+          it means the distribution of the underlying data summed
+          
+          so I can easily get the distribution of the whole signal ... then we have B + sum(F)/n, I think ...
+        sounds a litle unsure, let's assume gaussian and add a TODO
+
+    assume gaussian, add a TODO to use specific distributions
+
+      okay, so I have B + F(x) where B and F are defined by their mean and variance
+        the meansn sum, the variances sum
+        the mean and variance I have are
+          m(T(x)) = m(B) + m(F(x))
+          v(T(x)) = v(B) + v(F(x))
+
+          I'd like m(F(x)) to calculate power
+          for that, I'll need m(B)
+        
+          hmm what about ratio?
+
+
+          m(T(high)) = m(B) + m(F(high))
+          m(T(low)) = m(B) + m(F(low))
+
+          m(T(high)) - m(T(low)) = m(F(high)) - m(F(low))
+
+          The arithmetic difference between the means of the different spots of the signals represents the background mean (within proper stats stuff)
+          So I can compare all spots in the signal to the most extreme value.  I think ...
+
+              this should break down ? when it's too small ?
+              maybe not.  m(B) may be a bajillion, but we'll still get small changes in T(x)
+                it doesn't intuitively feel ilke these small changes are going to be arithmetically equal to changes in the mean.
+              
+          what are we measuring here, at each spot in the signal?
+            we actually have a distribution of samples from that spot.  precise samples, dsitribtuion
+
+          so changes in the mean are changes in the mean of that distribution
+          hmm if I ahve two guassian distributions and sum them, the means sum.  if they're very large and the sample is small, etc, inaccurate
+          
+    so some stats will be needed here
+
+
+MONOLOGUE:
+  So ... when profiling i considered convolving more than just 1 period, maybe 3 surroudning
+that idea could be generalized to convolve n surrounding.
+If this were done, it would work on weak as well as strong signals, I believe.
+    this is the approach tempest-sdr uses, I bet.
+
+The convolution function is interesting in that it has no concept of periodicity.
+    It compares each spot to each compared spot, and just sums the result.
+    What we want to do is different: we want to combine n spots from one, and n spots from the other, and
+    compare them all.  This is doable with matrix lib.  I think I wrote some code to do it already.
+    
+If I were to do this, I would get more data and accuracy for each comparison from the profiler.
+I'd additionally get the onset times more accurately, but there would be fewer of them: the onsets would be
+the averages of the neighboring onsets.
+The result would be more resilient in the face of noise and spurious things.
+So, that's notable.
+If I'm doing a recording next to an emitter, and there is a sudden problem, like a spark, one of my periods
+will be totally wrong.  But taking the 3 adjacent ones doesn't really fix that; it just makes the period be
+the average of the surrounding ones.
+
+Then, if I am distant from the emitter and want to find it when it has been lost, doing this would be more
+useful.  The period has changed slihtly, and the profiling technique will not longer work because the signal
+is too weak.  But if I accumulate many periods in this way, then I should be able to use this profiling technique.
+
+The simple approach of adding to each surroudning will slow down the processing by a factor of n.  Each period
+onset will become the averaeg of n surrounding onsets.
+Alternatively I can accumulate n periods until I find their average.  wasn't I doing this before ???? this was like
+my first approach.  what went wrong?
+The problem was that I was iterating each possible period sample-by-sample.  Now I'm starting downsampled, it's
+more reasonable to do.
+
+Okay, consider briefly that we have need to record 100 periods to see the signal at all (or a million, or a billion)
+call that number C.
+The ability to find the period via downsampling is highly limited based on how C relates to our accuracy of guessing
+the period.  Notably, downsampling doesn't even make use of a period guess in its present implementation.
+The phase will drift, creating destructive interference, resulting in a nonexistent result.
+But there's a "sweet range" in there, where combining periods allows the SNR to increase, before the phase drift
+causes it to cancel out.
+
+If we're recovering from a loss of the signal, that "sweet range" could be very useful to recover the signal,
+if we can fix the downsampling problem where there is phase incorrectness even if we know the phase very well.
+If the period is exhibiting brownian motion, we can guess how far it may have drifted to, but there may have been
+too many periods gone through to try all the guesses exhaustively.
+
+The problem is that the current downsampling implementation can only 'hug near' guesses that are powers of 2.
+Could I fix that, I wonder?
+I'd want to do the downsampling differently.  It mgiht be slightly slower.
+I'd want to sum over the actual periods, given the guess period.
+
+I think I've already written code to do this more complicated downsampling.  I don't know if it will be reasonably
+fast; if it adds linear complexity I'd judge it too slow.
+
+What needs to be done?
+Right now:
+  log(n) times for each downsampling:
+    constant: form a view of the buffer with outer stride = 2
+    n but inside eigen:      sum each row
+
+Same approach may not work because we can't rely on the 2-poer property, to retain phase in downsampled buffer
+Behavior of phase retention:
+  sum each predicted period
+    so the most downsampled copy would contain sums of entire periods
+    the least downsampled copy would sum pairs of data
+    the 2nd-most downsampled copy would sum halves of periods
+one approach would be to start with most-downsampled, but keep references to the original data
+do it period-by-period
+so, for each period (n/log(n) kinda):
+    log(n) times for each downsamping:
+      sum the data that will go in the downsample
+this is similarly n log(n) sums, but the difference is that the loops across the rows are outside eigen rather
+than inside
+if I could invert it to use a map, the behavior would be the same between them ...
+oh no, here's the issue:
+    if it's not a power of 2, then I think I have to redo the sums from the original data each time
+    which turns it into n sums instead of log(n) sums if we reuse the previous ones
+    we have to reuse the previous data in the shrinking loops to gain the speed advantage
+    
+to reuse the data I have to pay attention to how the periods are shifting
+the breaks between periods need to be kept distinct
+0 1 2 3 4 5 6 7 8 9
+period = 2.5
+|    |    |    |    |
+0   2   4   6   8
+the next downsample result might contain 0, 4, 6, 8, dropping 2
+or it could contain [0+1+2],[3+4],[5+6+7],[8+9], which would be more accurate but downsampled more
+hmm
+
+0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9
+period = 9.5       |                  |                  |                  |
+0   2   4   6   8   0   2   4   6   8   0   2   4   6   8   0   2   4   6   8
+
+the ideal fully downsampled result would be:
+0                   0                 9                   9
+this is impossible to get from the 2nd downsample because 9 has been absorbed.
+some data would have to be taken from the original to do this.
+
+alternatievly we could start with that final result, and add in details from above?
+so, we have each period onset, which we could turn into rows with a map
+we want the downsampled pieces from that map
+the row length is not a power of two
+if we could break the columns in two and sum them, we could produce really useful downsampled data.
+say the period is a prime number.
+to find the first guess, we want to be able to divide it into chunks
+we would need to divide it into chunks that are not equal.
+that's probably the solution, divide into inequal chunks.
+
+so i'd want to plan how to do this division of the columns into inequal chunks, and build each chunk out
+of sums of its inequal pieces
+
+this is not conducive to a map, because the rows are of different lengths in the interim bits.
+how do I find the phase in the first step if the period is a prime number?
+    by phase I mean the true period, guess period is a prime number, last known period
+
+for one thing, if you know the accuracy of your guess you dont' need to downsample so far, could perhaps pick
+    nonprime situation
+if the guess period is nonprime, then I can downsample easily via one of the prime factors, kind of funny unideal
+
+it's hard to tell if this is an easy problem and my mind is having issues, or if this is an unreasonable problem
+that i should forget about
+
+  
+
+FAILURE PLAN:
+  - likely I have made an error somewhere and will need to adjust this plan as I work on it
+    maybe I'll want to output the results of each step and verify they are what I expect
+    I could try to avoid spending a lot fo time working on something without checking that it works.
+
+        It's _really_ nice to be able to graph what is being recorded, in real time.  This is very helpful for diagnosing things.
+        Instead, I've been printing numeric metrics to the screen, which uses much less of my senses to verify correctness, make sure it is what I expect.
+
+    Maybe we can link in a small graph.  Take the work from emap?
+          emap's graph is part of a big package .. it doesn't leave room for labeling things etc
+
+      Maybe take the graphics lib from emap and make a homebrew graphing class, just to watch things.
+      Or link in with gnuradio, but they are also a big package, do they allow labeling? no, it's just a more generic approach where my work is more reusable in case I go down a dead end
+      
+      there's got to be a realtime charting lib that can be quickly pulled in.  7 minutes
+
+      ROOT is a c++ library for scientific analysis of data.  This would really help me have algorithms more accessible, and it has plotting/charting.  Not sure how easy it is.
+        Problem is learning curve.  I could get distracted while learning it.  Gratification of accomplishment is distant.
+      not sure how heavyweight root is, might be hard to use embedded.  it tends to store function definitions at runtime, which is unneccessary and uses lots of ram, and possible cpu parsing them
+      VTK has just the charting without all the function definitions
+      ROOT is used by CERN and likely actively maintained
+
+    ROOT is downloading; 2 hrs. maybe review when download completes.
+
+
+
+
