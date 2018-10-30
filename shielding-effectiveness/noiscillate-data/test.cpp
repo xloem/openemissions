@@ -2034,27 +2034,12 @@ public:
   template <class Derived>
   int operator()(Eigen::MatrixBase<Derived> const & first, Eigen::MatrixBase<Derived> const & second)
   {
+    using Eigen::numext::mini;
     //_fftResult1.conservativeResize(first.size());
     //_fftResult2.conservativeResize(second.size());
-    if (first.size() > second.size())
-    {
-      _temp.conservativeResize(second.size());
-      _temp = first.head(second.size());
-      _fft.fwd(_fftResult1, _temp);
-      _fft.fwd(_fftResult2, second);
-    }
-    else if (second.size() > first.size())
-    {
-      _temp.conservativeResize(first.size());
-      _temp = second.head(first.size());
-      _fft.fwd(_fftResult2, _temp);
-      _fft.fwd(_fftResult1, first);
-    }
-    else
-    {
-      _fft.fwd(_fftResult1, first);
-      _fft.fwd(_fftResult2, second);
-    }
+    size_t nfft = mini(first.size(), second.size());
+    _fft.fwd(_fftResult1, first, nfft);
+    _fft.fwd(_fftResult2, second, nfft);
     // conjugate produces correlation instead of convolution
     _fftResult2.array() *= _fftResult1.array().conjugate(); // pointwise product into _fftResult2
     _fft.inv(_correlation, _fftResult2); // time-domain into _correlation
@@ -2073,7 +2058,6 @@ public:
 
 private:
   Eigen::FFT<Scalar> _fft;
-  HeapVector<Scalar> _temp;
   HeapVector<typename Eigen::FFT<Scalar>::Complex> _fftResult1;
   HeapVector<typename Eigen::FFT<Scalar>::Complex> _fftResult2;
   HeapVector<Scalar> _correlation;
@@ -2484,7 +2468,7 @@ public:
         state.past.get(_pastBuf);
         state.active.get(_activeBuf);
         int rotation = _correlationFunctor(_activeBuf, _pastBuf);
-        std::cout << "Rotation: " << rotation << std::endl;
+        std::cout << "Drift: " << -rotation/Scalar(_onsetsBuf.size()) << std::endl;
 
         // rotate stored sum
         state.active.rotate(rotation);
