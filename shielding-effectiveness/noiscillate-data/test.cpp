@@ -1,5 +1,9 @@
-#include <iostream>
 #include <algorithm>
+#include <chrono>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <random>
 
 #include "types.hpp"
 
@@ -446,7 +450,7 @@ public:
     {
       bins[bin].add(chunk);
       offset = (offset + chunk.size()) % period;
-      std::cout << offset << " / " << period << std::endl;
+      std::cerr << offset << " / " << period << std::endl;
     }
     else
     {
@@ -512,8 +516,8 @@ public:
         maxBin = i;
       }
     }
-    //std::cout << period << " min " << minBin << " sigma^2 " << minVariance << std::endl;
-    //std::cout << period << " max " << maxBin << " sigma^2 " << maxVariance << std::endl;
+    //std::cerr << period << " min " << minBin << " sigma^2 " << minVariance << std::endl;
+    //std::cerr << period << " max " << maxBin << " sigma^2 " << maxVariance << std::endl;
   }
 
   Scalar significance() const
@@ -763,7 +767,7 @@ public:
     {
       periodMetrics.emplace_back(i, config);
     }
-    std::cout << "Constructed." << std::endl;
+    std::cerr << "Constructed." << std::endl;
   }
 
   template <typename Derived>
@@ -776,7 +780,7 @@ public:
       auto & pa = periodMetrics[pidx];
       pa.add(chunk);
       Scalar significance = pa.significance();
-      std::cout << "period #" << pidx << " (" << pidx + minPeriod << "): " << significance*100 << std::endl;
+      std::cerr << "period #" << pidx << " (" << pidx + minPeriod << "): " << significance*100 << std::endl;
       if (significance < bestSignificance)
       {
         bestSignificance = significance;
@@ -2042,7 +2046,7 @@ public:
     _fft.fwd(_fftResult2, second, nfft);
     // conjugate produces correlation instead of convolution
     _fftResult2.array() *= _fftResult1.array().conjugate(); // pointwise product into _fftResult2
-    _fft.inv(_correlation, _fftResult2); // time-domain into _correlation
+    _fft.inv(_correlation, _fftResult2, nfft); // time-domain into _correlation
 
     int idx;
     _correlation.maxCoeff(&idx);
@@ -2248,6 +2252,17 @@ public:
   {
     _mergeOverflow();
 
+    while (amount > (int)_shortest)
+    {
+      std::cerr << "WARNING: drift is greater than 1 period" << std::endl;
+      amount -= _shortest;
+    }
+    while (-amount > (int)_shortest)
+    {
+      std::cerr << "WARNING: drift is greater than 1 period" << std::endl;
+      amount += _shortest;
+    }
+
     std::rotate(
         _rotatedModel.begin(),
         _rotatedModel.begin() + (amount < 0 ? 0 : _shortest) - amount,
@@ -2279,15 +2294,67 @@ public:
   template <StatsStatistic STAT>
   Scalar integrate() const
   {
-    // FIX TODO: when integrating stats metrics, this should be done relative
-    //           to the background population !! I never took the difference to
-    //           cancel out the background noise.  Power is over-reported.
-    Scalar ret = 0.0;
+    // FIX TODO: assume least extreme signal element is background noise
+    //           then, assume any that don't cross significance threshhold of being in the same distribution,
+    //            are also background noise
+    // Least extreme signal element is treated as background noise and removed
+    // from each distribution sample.
+    // Results represent difference of integral of signal from integral of minimum,
+    // which scales proportionally to just plain signal integral.
+    //
+    // FIX TODO: review whether this is robust in the face of noise changing the smallest element
+
+    using Eigen::numext::abs;
+
+    auto min = real_limits<Scalar>::infinity();
+    decltype(min) max = 0;
+    size_t minIdx, maxIdx;
     for (size_t i = 0; i < _model.size(); ++ i)
     {
       if (_model[i].size() > 0)
       {
-        ret += _model[i].template get<STAT>();
+        auto stat = abs(_model[i].template get<STAT>());
+        if (stat < min)
+        {
+          min = stat;
+          minIdx = i;
+        }
+        if (stat > max)
+        {
+          max = stat;
+          maxIdx = i;
+        }
+      }
+    }
+
+    // FIX TODO: make this heuristic make sense: e.g. only look at dists with variance and mean within half a std dev of sampling dist expected.  perhaps calc numbers to get 1 wrongly chosen dist on avg
+    auto thresh = (max - min) * 0.125 + min;
+    StatsAccumulator backgroundGuess = _model[minIdx];
+    for (size_t i = 0; i < _model.size(); ++ i)
+    {
+      if (i == minIdx || _model[i].size() == 0)
+      {
+        continue;
+      }
+      
+      if (_model[i].template get<STAT>() < thresh)
+      {
+        backgroundGuess.add((StatsAccumulator&)_model[i]);
+      }
+    }
+
+    Scalar ret = 0;
+    StatsDistributionBrief<Scalar> dist(0, 0);
+    for (size_t i = 0; i < _model.size(); ++ i)
+    {
+      if (_model[i].size() > 0)
+      {
+        dist.setMeasures(_model[i].mean() - backgroundGuess.mean(), _model[i].variance() - backgroundGuess.variance());
+        if (dist.variance() < 0)
+        {
+          continue;
+        }
+        ret += dist.template get<STAT>();
       }
     }
     return ret;
@@ -2304,11 +2371,16 @@ public:
     // TODO: I assume variances sum here; i think that's correct?
     // TODO: check stats, and stats implementation
 
+
+
     Scalar ret = 0.0;
     _mergeOverflow();
     for (size_t i = 0; i < _shortest; ++ i)
     {
-      ret += StatsDistributionSampling<Scalar, STAT>(_model[i].fakeInfinitePopulation(), _model[i].size()).variance();
+      if (_model[i].size() > 0)
+      {
+        ret += StatsDistributionSampling<Scalar, STAT>(_model[i].fakeInfinitePopulation(), _model[i].size()).variance() * 2;
+      }
     }
 
     return ret;
@@ -2319,16 +2391,27 @@ public:
     return integrationVariance<STATISTIC>();
   }
 
-  // methods I'll want from this model class:
-  //  - [X] magnitude of wave?
-  //  - [X] precision of magnitude of wave?
-  //  - [X] indication of wave not being noise
-  //  - [X] to rotate the data
-  //  - [X] vector of means
-  //  - [X] vector of variances
-  //  - [ ] convolve with another wave, with possible range
-  //    -> use a namespace-scope convolution func
-  // [X] done for now =)
+  void dbgDump(std::ostream &f)
+  {
+    _mergeOverflow();
+    uint32_t histCount = _shortest;
+    f.write((char*)&histCount, sizeof(histCount));
+    for (uint32_t i = 0; i < histCount; ++ i)
+    {
+      Scalar histStart, binWidth;
+      uint32_t binCount;
+      HeapVector<Scalar> const & hist = _rotatedModel[i]->histogram(histStart, binWidth);
+      binCount = hist.size();
+      f.write((char*)&i, sizeof(i));
+      f.write((char*)&histStart, sizeof(histStart));
+      f.write((char*)&binWidth, sizeof(binWidth));
+      f.write((char*)&binCount, sizeof(binCount));
+      for (size_t j = 0; j < binCount; ++ j)
+      {
+        f.write((char*)&hist[j], sizeof(hist[j]));
+      }
+    }
+  }
 
 private:
   std::vector<StatsAccumulator> _model;
@@ -2352,6 +2435,24 @@ private:
     }
   }
 };
+
+/*
+ * grumble gripe
+ * i'm storing a log of the shape of the wave at each frequency tuned to, at the
+ * recording samplerate
+ * i'm guessing the system is crashing because, when tuning to too many frequencies,
+ * memory is exhausted
+ *    (although that doesn't describe everything)
+ * -> thinking a nice quick solution could be to provide a max # of freqs to store
+ *    and start rotating them when that is reached
+ *
+ * approaches to resolving ram exhaustion:
+ *  - more ram
+ *  - optimize stats information (switch to gaussian summary? store data efficiently?)
+ *  - max # of freqs stored
+ *  - don't store model data for old freqs at all
+ *  - downsample storage
+ */
 
 template <typename Scalar, class WaveformModel, class CorrelationFunctorType>
 class PeriodProcessorDetectKnownCorrelate
@@ -2389,8 +2490,9 @@ public:
   template <class DataFeeder, class Derived>
   void process(DataFeeder & feeder, Eigen::DenseBase<Derived> const & chunk, RecBufMeta const & meta)
   {
-    // stores startng onset time relative to chunk start
-    int64_t lastOnset; // TODO: made this an int64_t to provide for huge sample gaps, but that may be silly, didn't really think about it, or consider elsewhere
+    // stores starting onset time relative to chunk start
+    int64_t lastOnset; // TODO?: made this an int64_t to provide for huge sample gaps, but that may be silly, didn't really think about it, or consider elsewhere
+    uint64_t missedOnsets = 0;
     uint64_t lastPeriods;
     if (_onsetsBuf.size())
     {
@@ -2399,6 +2501,7 @@ public:
     }
     else
     {
+      // first data buffer processed!
       _onsetStart = meta.sampleTime;
       lastOnset = 0;
       lastPeriods = _onsetStartPeriods;
@@ -2416,12 +2519,15 @@ public:
       _unpinnedModels.push_back(&state);
     }
 
-    if (-lastOnset > state.active.maxUsefulPeriod())
+    // is this correct if data is lost without tuning?
+    // this only checks for dataloss, but not for tuning
+    if (-lastOnset >= _approxWavelen)
     {
       // adjust lastOnset to account for data gap
       auto shiftCt = Eigen::numext::floor((meta.sampleTime - _onsetStart) / _approxWavelen);
       lastOnset = _onsetStart + static_cast<uint64_t>(shiftCt * _approxWavelen + 0.5) - meta.sampleTime;
       lastPeriods = _onsetStartPeriods + shiftCt;
+      //missedOnsets = lastPeriods - _onsetsBuf.size();
     }
 
     // ensure _onsetsCt is large enough
@@ -2442,6 +2548,7 @@ public:
     uint64_t bufferOffset;
     if (state.active.samplesConsidered() == 0)
     {
+      // first data buffer for this run
       _onsetStart = meta.sampleTime;
       _onsetStartPeriods = lastPeriods;
       _onsetsBuf.conservativeResize(onsetCt);
@@ -2449,26 +2556,41 @@ public:
     }
     else
     {
-      _onsetsBuf.conservativeResize(_onsetsBuf.size() + onsetCt);
+      _onsetsBuf.conservativeResize(_onsetsBuf.size() + missedOnsets + onsetCt);
       bufferOffset = meta.sampleTime - _onsetStart;
     }
+    // TODO: code updated to no longer require tracking onsets between runs, no need for .tail() here,
+    //       but will need to track total number of periods encountered and replace _onsetsBuf.size() everywhere
     _onsetsBuf.tail(onsetCt) = bufferOffset + (_onsetsCt.array().head(onsetCt) * _approxWavelen).round().template cast<int>() + lastOnset;
+
+    /*
+     * Bug: when wavelength shrinks by a lot, we can lose a whole period, similar to tuning delay
+     * 
+     * bug concern: we track all onsets for the current freq in _onsetsBuf, so dropping a period could confuse the tracking
+     * solution?: drop the period, but store its location anyway
+     */
 
     // shift onsets to match buffer start and add data
     state.active.add(chunk, (_onsetsBuf.tail(onsetCt).array() - bufferOffset), lastOnset + onsetCt * _approxWavelen - chunk.size());
 
+    //std::cerr << "SamplesPerSignificance: " << state.active.samplesConsidered() / state.active.significance() << std::endl;
+
     if (state.active.samplesConsidered() / state.active.significance() > _minSamplesPerSignificance)
     {
-      size_t effectivePhaseOnset = _onsetsBuf.size()/2;
-      uint64_t activePhaseTimestamp = _onsetsBuf[effectivePhaseOnset] + _onsetStart;
-      uint64_t activePhasePeriod = effectivePhaseOnset + _onsetStartPeriods;
+      // "phase" attributes represent the average over the measurement
+      //      these are the timestamp and period at which the measured, aligned phase matches reality
+      size_t effectivePhaseOnsetIdx = _onsetsBuf.size()/2;
+      //uint64_t activePhaseTimestamp = _onsetsBuf[effectivePhaseOnsetIdx] + _onsetStart;
+      uint64_t activePhaseTimestamp = static_cast<uint64_t>(Eigen::numext::round(effectivePhaseOnsetIdx * _approxWavelen)) + _onsetStart + lastOnset;
+      //assert(activePhaseTimestamp == activePhaseTimestamp2);
+      uint64_t activePhasePeriod = effectivePhaseOnsetIdx + _onsetStartPeriods;
       if (state.past.periodsConsidered())
       {
         // rotate active wave to be in-phase with past wave
         state.past.get(_pastBuf);
         state.active.get(_activeBuf);
         int rotation = _correlationFunctor(_activeBuf, _pastBuf);
-        std::cout << "Drift: " << -rotation/Scalar(_onsetsBuf.size()) << std::endl;
+        std::cerr << "Drift: " << -rotation/Scalar(activePhasePeriod - state.lastPhasePeriod) << std::endl;
 
         // rotate stored sum
         state.active.rotate(rotation);
@@ -2484,11 +2606,13 @@ public:
         // update wavelength measure
         _approxWavelen = (_lastPhaseTimestamp - _firstPhaseTimestamp) / Scalar(_lastPhasePeriod - _firstPhasePeriod);
 
-        // adjust final onset
+        // adjust final onset (other onsets will be ignored)
         uint64_t finalOnsetPeriod = _onsetStartPeriods + _onsetsBuf.size() - 1;
+        // move buffer such that it represents xtarting at the phase-aligned time
         _onsetStart = activePhaseTimestamp;
         _onsetStartPeriods = activePhasePeriod;
         _onsetsBuf.conservativeResize(finalOnsetPeriod - activePhasePeriod + 1);
+        // set value
         _onsetsBuf[_onsetsBuf.size() - 1] = (finalOnsetPeriod - activePhasePeriod) * _approxWavelen + 0.5;
 
         // TODO: if this is a large rotation, assume it is calibration
@@ -2511,7 +2635,7 @@ public:
 
             auto drift = (correctedFirstPhaseTimestamp - otherModel->firstPhaseTimestamp + correctedLastPhaseTimestamp - otherModel->lastPhaseTimestamp) / 2;
 
-            otherModel->past.rotate(drift);
+            otherModel->past.rotate(-drift);
             otherModel->firstPhaseTimestamp += drift;
             otherModel->lastPhaseTimestamp += drift;
             otherModel->pinned = true;
@@ -2530,6 +2654,10 @@ public:
           _firstPhasePeriod = activePhasePeriod;
         }
       }
+
+      // DEBUG write model data to file
+      //static std::ofstream f("test_statmodels.modeldump");
+      //state.active.dbgDump(f);
 
       state.past.add(state.active);
       state.active.clear();
@@ -2594,10 +2722,10 @@ private:
     // TODO: use variance to determine 'large convolution' above
     WaveformModel past;
 
-    uint64_t firstPhaseTimestamp;
-    uint64_t firstPhasePeriod;
-    uint64_t lastPhaseTimestamp;
-    uint64_t lastPhasePeriod;
+    int64_t firstPhaseTimestamp;
+    int64_t firstPhasePeriod;
+    int64_t lastPhaseTimestamp;
+    int64_t lastPhasePeriod;
 
     bool pinned; // whether times are aligned with global time
   };
@@ -2605,10 +2733,10 @@ private:
   std::map<Scalar,FrequencyState> _modelsByFrequency;
   std::vector<FrequencyState *> _unpinnedModels;
   FrequencyState * _canonicalModel;
-  uint64_t _firstPhaseTimestamp;
-  uint64_t _firstPhasePeriod;
-  uint64_t _lastPhaseTimestamp;
-  uint64_t _lastPhasePeriod;
+  int64_t _firstPhaseTimestamp;
+  int64_t _firstPhasePeriod;
+  int64_t _lastPhaseTimestamp;
+  int64_t _lastPhasePeriod;
   FrequencyState _initial;
   Scalar _approxWavelen; // FIX TODO: this is used for period timing and uses of it would need to be changed to use cryptographic timing to provide robustness in the face of noise with equal timing to detected source
   CorrelationFunctorType _correlationFunctor;
@@ -2766,6 +2894,16 @@ private:
 // downsampling could be done by reshaping into a matrix and taking colwise/rowise
 // downsample operation !
 
+struct TuningFreq
+{
+  Scalar freq;
+  size_t idx;
+};
+
+// - [ ] resolve crash after significant tuning, perhaps by decreasing ram use?
+// - [ ] change tuning structure to store indices using above structure
+// - [ ] output complete spectrum when done
+
 int main(int argc, char const * const * argv)
 {
   // New period has high variability.
@@ -2849,20 +2987,25 @@ int main(int argc, char const * const * argv)
   //            rotation = 25943
   // 4. - [ ] fix period integration to not include background noise
 
-  RtlSdrIQDump data(std::cin);
-
+  //RtlSdrIQDump data(std::cin);
+  
+  constexpr Scalar MIN_TUNE_FREQ =  400000000;
+  constexpr Scalar MAX_TUNE_FREQ = 1600000000;
+  constexpr Scalar FREQ_GUESS = 8000;
+  constexpr Scalar FREQ_GUESS_ERROR = FREQ_GUESS / 100;
   constexpr size_t SAMPLERATE = 2400000;
-  //SoapyLive data("", 43, SAMPLERATE);
-  constexpr Scalar FREQ_GUESS = 40.025;
-  constexpr Scalar FREQ_GUESS_ERROR = 1;
+  constexpr size_t TUNE_WIDTH = SAMPLERATE / 2;
+
+  SoapyLive data("", 43, SAMPLERATE);
   constexpr size_t FFT_BUFFERSIZE = 4 * 1024;// * 2 / 5 + 1;
-  constexpr size_t RADIO_BUFFERSIZE = 2048000 / 2;
+  constexpr size_t RADIO_BUFFERSIZE = SAMPLERATE / 10;
   constexpr size_t INITIALIZATION_SECS = 1;//10;
   constexpr size_t DOWNSAMPLING = INITIALIZATION_SECS * SAMPLERATE / FFT_BUFFERSIZE;
-  constexpr double BUFFERS_PER_SEC = SAMPLERATE / double(FFT_BUFFERSIZE);
+  constexpr Scalar BUFFERS_PER_SEC = SAMPLERATE / double(FFT_BUFFERSIZE);
   //PeriodFinderFFT<Scalar> periodFinder(SAMPLERATE / (FREQ_GUESS * 2) + 2, FFT_BUFFERSIZE * DOWNSAMPLING / 5 - 2, FFT_BUFFERSIZE, DOWNSAMPLING);
 
-  WaveformModelStatsAccumulator<StatsAccumulatorNormal<Scalar>, STATS_STANDARD_DEVIATION> initialModel({}, SAMPLERATE / Scalar(FREQ_GUESS - FREQ_GUESS_ERROR));
+  WaveformModelStatsAccumulator<StatsAccumulatorHistogram<Scalar>, STATS_STANDARD_DEVIATION> initialModel({data.epsilon()}, SAMPLERATE / Scalar(FREQ_GUESS - FREQ_GUESS_ERROR));
+  //WaveformModelStatsAccumulator<StatsAccumulatorNormal<Scalar>, STATS_STANDARD_DEVIATION> initialModel({}, SAMPLERATE / Scalar(FREQ_GUESS - FREQ_GUESS_ERROR));
 
   PeriodProcessorDetectKnownCorrelate<Scalar, decltype(initialModel), FFTCorrelationFunctor<Scalar>> processor(initialModel, SAMPLERATE / Scalar(FREQ_GUESS), {}, Scalar(SAMPLERATE) * 60 * 60 * 24 * 365.25 * 100);
   //PeriodProcessorConvolveDownsample<Scalar> processor(SAMPLERATE / (FREQ_GUESS + FREQ_GUESS_ERROR) - 1, SAMPLERATE / (FREQ_GUESS - FREQ_GUESS_ERROR) + 1, SAMPLERATE / (FREQ_GUESS) / 6);
@@ -2876,6 +3019,32 @@ int main(int argc, char const * const * argv)
   //data.readMany(buffer); // allow to settle
   //
   std::cout.precision(real_limits<Complex>::max_digits10);
+  std::cerr.precision(real_limits<Complex>::max_digits10);
+
+  std::vector<TuningFreq> tune_freqs{};
+  for (Scalar freq = MIN_TUNE_FREQ; freq <= MAX_TUNE_FREQ; freq += TUNE_WIDTH)
+  {
+    TuningFreq obj;
+    obj.freq = freq;
+    obj.idx = tune_freqs.size();
+    tune_freqs.push_back(obj);
+  }
+  std::vector<Scalar> tune_dBs(tune_freqs.size());
+
+  auto beginTime = std::chrono::steady_clock::now();
+  std::random_device rand_dev;
+  std::mt19937 rand_gen(rand_dev());
+
+  // TODO FIX TODO: REMOVE DEBUG LINE
+//#warning REMOVE DEBUG LINE PREVENTS FULL SCAN
+  //tune_freqs.resize(tune_freqs.size() / 10);
+  //tune_dBs.resize(tune_freqs.size());
+
+  std::shuffle(tune_freqs.begin(), tune_freqs.end(), rand_gen);
+
+  auto curFreq_it = tune_freqs.begin();
+  data.tune(curFreq_it->freq);
+
 
   for (data.readMany(buffer, bufMeta); buffer.size(); data.readMany(buffer, bufMeta))
   {
@@ -2890,21 +3059,37 @@ int main(int argc, char const * const * argv)
       using Eigen::numext::sqrt;
       lastPeriods = processor.periodsConsidered();
 
-      std::cout << "Periods: " << lastPeriods << std::endl;
-      std::cout << "Wavelength Avg: " << processor.bestPeriod() / double(SAMPLERATE) << std::endl;
-      std::cout << "Frequency Avg: " << double(SAMPLERATE) * processor.bestFrequency() << std::endl;
-      //std::cout << "Wavelength STD: " << sqrt(processor.periodVariance()) / double(SAMPLERATE) << std::endl;
+      auto elapsedTime = std::chrono::steady_clock::now() - beginTime;
+      auto percentDone = (curFreq_it - tune_freqs.begin() + 1) / Scalar(tune_freqs.size());
+      auto remainingTime = elapsedTime * (1 / percentDone - 1);
+      auto hrs = std::chrono::duration_cast<std::chrono::hours>(remainingTime);
+      remainingTime -= hrs;
+      auto mins = std::chrono::duration_cast<std::chrono::minutes>(remainingTime);
+      remainingTime -= mins;
+      auto secs = std::chrono::duration_cast<std::chrono::seconds>(remainingTime);
+      std::cerr.fill('0');
+      std::cerr << "Tuned to: " << curFreq_it->freq << " Hz (" << percentDone*100 << "% ETA: " << std::setw(2) << hrs.count() << ":" << std::setw(2) << mins.count() << ":" << std::setw(2) << secs.count() << ")" << std::endl;
+      std::cerr << "Periods: " << lastPeriods << std::endl;
+      std::cerr << "Wavelength Avg: " << processor.bestPeriod() / double(SAMPLERATE) << std::endl;
+      std::cerr << "Frequency Avg: " << double(SAMPLERATE) * processor.bestFrequency() << std::endl;
+      //std::cerr << "Wavelength STD: " << sqrt(processor.periodVariance()) / double(SAMPLERATE) << std::endl;
       /*
-      std::cout << "Best significance so far: " << periodFinder.bestPeriod() << " (" << Scalar(SAMPLERATE) / periodFinder.bestPeriod() << " Hz " << periodFinder.bestSignificance()*100 << " %)" << std::endl;
-      std::cout << "                          " << periodFinder.bestPeriod2() << " (" << Scalar(SAMPLERATE) / periodFinder.bestPeriod2() << " Hz " << periodFinder.bestSignificance2()*100 << " %)" << std::endl;
+         std::cerr << "Best significance so far: " << periodFinder.bestPeriod() << " (" << Scalar(SAMPLERATE) / periodFinder.bestPeriod() << " Hz " << periodFinder.bestSignificance()*100 << " %)" << std::endl;
+         std::cerr << "                          " << periodFinder.bestPeriod2() << " (" << Scalar(SAMPLERATE) / periodFinder.bestPeriod2() << " Hz " << periodFinder.bestSignificance2()*100 << " %)" << std::endl;
       */
       auto mag = processor.bestMag(bufMeta.freq);
       auto err = sqrt(processor.bestMagVariance(bufMeta.freq)) * 3;
+      std::cerr << "                          " << mag << " mag " << err << " err" <<std::endl;
+      //tune_dBs[*curFreq_it - ]
       auto mindB = 20 * log10(mag - err);
       auto maxdB = 20 * log10(mag + err);
       auto dBctr = (maxdB + mindB) / 2;
       auto dBerr = (maxdB - mindB) / 2;
-      std::cout << "                          " << dBctr << " dB +-" << dBerr << " dB" <<std::endl;
+      std::cerr << "                          " << dBctr << " dB +-" << dBerr << " dB" <<std::endl;
+
+      tune_dBs[curFreq_it->idx] = 20 * log10(mag);
+      std::cout << curFreq_it->freq << " " << tune_dBs[curFreq_it->idx] << std::endl;
+      ++ curFreq_it;
 
       /*
       // stop when stats imply small enough significance that there would be one error in a year of trials, and dB is within 0.1
@@ -2912,12 +3097,29 @@ int main(int argc, char const * const * argv)
       {
         break;
       }*/
+      if (curFreq_it == tune_freqs.end())
+      {
+        std::shuffle(tune_freqs.begin(), tune_freqs.end(), rand_gen);
+        curFreq_it = tune_freqs.begin();
+        beginTime = std::chrono::steady_clock::now();
+
+        /*for (size_t i = 0; i < tune_dBs.size(); ++ i)
+        {
+          if (i)
+          {
+            std::cout << ", ";
+          }
+          std::cout << tune_dBs[i];
+        }*/
+        std::cout << std::endl;
+      }
+      data.tune(curFreq_it->freq);
     }
   }
   /*
-  std::cout << "Best significance: " << periodFinder.bestPeriod() << " (" << Scalar(SAMPLERATE) / periodFinder.bestPeriod() << " Hz " << periodFinder.bestSignificance()*100 << " %)" << std::endl;
-  std::cout << "                   " << periodFinder.bestPeriod2() << " (" << Scalar(SAMPLERATE) / periodFinder.bestPeriod2() << " Hz " << periodFinder.bestSignificance2()*100 << " %)" << std::endl;
-  std::cout << " (Range is "
+     std::cerr << "Best significance: " << periodFinder.bestPeriod() << " (" << Scalar(SAMPLERATE) / periodFinder.bestPeriod() << " Hz " << periodFinder.bestSignificance()*100 << " %)" << std::endl;
+     std::cerr << "                   " << periodFinder.bestPeriod2() << " (" << Scalar(SAMPLERATE) / periodFinder.bestPeriod2() << " Hz " << periodFinder.bestSignificance2()*100 << " %)" << std::endl;
+     std::cerr << " (Range is "
      << periodFinder.minBestPeriod() << "=" << Scalar(SAMPLERATE) / periodFinder.minBestPeriod() << " Hz  to "
      << periodFinder.maxBestPeriod() << "=" << Scalar(SAMPLERATE) / periodFinder.maxBestPeriod() << " Hz)" << std::endl;
   auto mag = periodFinder.bestMag();
@@ -2926,15 +3128,15 @@ int main(int argc, char const * const * argv)
   auto maxdB = 20 * log10(mag + err);
   auto dBctr = (maxdB + mindB) / 2;
   auto dBerr = (maxdB - mindB) / 2;
-  std::cout << "                          " << dBctr << " dB +-" << dBerr << " dB " << std::endl;
+  std::cerr << "                          " << dBctr << " dB +-" << dBerr << " dB " << std::endl;
   */
 
   //auto significances = periodFinder.significances();
   //for (size_t i = 0; i < significances.size(); ++ i)
   //{
-  //  std::cout << significances[i] << " ";
+  //  std::cerr << significances[i] << " ";
   //}
-  //std::cout << std::endl;
+  //std::cerr << std::endl;
   
   //PeriodFinderAccumulateAllInteger<PeriodModelAccumulatorNoiscillate<StatsAccumulatorHistogram<Scalar>>> periodFinder2(periodFinder.minBestPeriod(), periodFinder.maxBestPeriod(), StatsAccumulatorHistogram<Scalar>(data.epsilon()));
 
@@ -2949,6 +3151,12 @@ int main(int argc, char const * const * argv)
   //}
   return 0;
 }
+
+/*
+ * oh my god I've been working so hard to do this and it was suddenly so easy!
+ * but when i try to inner dialogue around that, to see how it might happen in the future
+ * i got some nasty feedback, like a desire to hit myself hard in my head
+ */
 
 // TODO GOAL [NEXT]:
 // Seems the ideal execution path might be:

@@ -1,4 +1,4 @@
 all: test check pcmsummary
 
 %: %.cpp *.hpp
-	g++ $@.cpp -o $@ $$(pkg-config --cflags eigen3) $$(pkg-config --libs fftw3) -std=c++14 -ggdb
+	clang++ -pedantic $@.cpp -o $@ $$(pkg-config --cflags eigen3) $$(pkg-config --libs fftw3) $$(pkg-config --libs SoapySDR) -std=c++14 -ggdb -O3 #-DEIGEN_DONT_VECTORIZE

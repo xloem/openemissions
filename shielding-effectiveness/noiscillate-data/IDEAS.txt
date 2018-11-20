@@ -1,0 +1,22 @@
+- [X] look to see if anyone's derived the formula to get more precise frequency out of a low-resolution fourier transform
+  Quinn's #2 is pretty good, but only if the underlying signal is sinusoidal.
+  I could probably copy his method and apply to a square wave.
+  "Estimating Frequency by Interpolating Using Fourier Coefficients" 1994
+  "The estimation and tracking of frequency" 2001
+  "On Local Interpolation of DFT Outputs" 1996
+- [ ] see how web instrument tuning software does it
+- [ ] tempestsdr uses auto-convolution; i.e. you can take the pointwise product of an fft with itself, then the
+      fft inverse, to get the autocorrelation (offset point * point) of the original data.  it's in his paper.
+      the advantage of this is that one could accumulate the fft over time to reduce noise ! ... i think
+- [ ] see if autoconvolution could be used for a statistical approach
+- [X] I could get a narrower frequency by doing this like an iq radio does; multiply by sin/cos complex signal
+      to frequency shift it, and then the details are all centered around the frequency of interest instead of DC
+      -> this doesn't change accuracy; it's still +/- in frequency space the same amount
+      -> downsampling allows storing more data and increasing accuracy, but the amount of time needed to accumulate enough samples to get per-sample accuracy for 10 hz is greater than the length of my recording (which is only a minute)
+          but the signal is pretty loud; we could at least guess at an exact frequency, not having looked at the stats
+- [ ] try deriving quinn's interpolation approach for square wave noise
+- [ ] look into other FFT interpolation approaches
+- [ ] speed up my noiscillate period finder by doing all the periods at once using a matrix with a multiplier
+- [ ] use an 'intelligent accumulator' that accepts incoming samples and adjusts a guess of when the magnitude change is expected, based on history
+- [ ] split the data into high regions and low regions and determine freq from where they are
+

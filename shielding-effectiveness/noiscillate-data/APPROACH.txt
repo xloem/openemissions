@@ -1,3 +1,26 @@
+- [ ] find local testing facility and see how much they would charge to determine SE of homemade junk
+  -> sent e-mail to jansky lab 2018-10-19
+- [ ] new detector approach will make use of accumulated floats with a divisor
+    may need to switch to rational numbers to fix this
+    - [X] debug mean difference issue and verify it will be fixed by a switch to rational numbers
+        -> issue was nonpresent when debugging.  magnitude of number does not rise high enough.
+    - X[ ] switch to arbitrary-precision numbers
+    - X[ ] verify that this makes the total mean equal to the accumulated mean
+- [ ] add TODO to adjust for signal ppm.  due to a bug i had thought it wasn't an issue
+    should test multiple runs of device to understand when it changes
+    -> I'm thinking, for rtl-sdr, is useful to have clock-time and sample-time separate for buffers.  can infer ppm from clock time, but note accuracy is low because inclueds software latency
+       could also just note that each session will haev a different ppm
+       -> probably take known freq of source and infer combined ppm?
+       -> to infer ppm in future, will want id of radio stored with recording
+- [X] find where I wrote belief that ppm was not an issue, and update
+    -> one spot, perhaps only one, was in README.txt in this dir
+- [ ] provide for detector to _stop_ when it detects signal, and update phase.
+     will need to store multiple statistical models as signal chunks
+     each chunk has a count and a time
+     chunks can be combined to determine phase
+  -> this behavior could replace current profiler
+  - [ ] some notes and checkboxes on this at bottom of file.  it's an exciting approach but involves accumulation of scalars
+
 1. ::: PeriodFinderConvolveDownsample :::
   We want to profile the signal when it is loud.
   Given a profile, we can determine the weakest we can detect given our detection approach.
@@ -30,18 +53,34 @@
             these are kept separate files so they may be streamed to live
   5. Can accumulate more buffers and continue
   
-
 2.
-  Once we have a profile, we can use a simple detection approach to measure it.
+  Build detector, using generic approach to reuse algorithms with profiler.
+  Detector will accumulate 'chunks' of waves, each containing:
+  - accumulated statistical model, for each sample
+  - total number of wavelengths since last period adjustment, to plan drift compensation
+  - numer of wavelengths used to accumulate data, to properly scale data
 
-  1. hold a buffer of gaussian distributions for wave + background
+  - [ ] Plan detector approach and separate out shared algorithmic concepts with profiler.
+  - [ ] Mark a TODO whenever values are accumulated to verify accuracy is not lost.
+
+3 => updated.  see 'NEW PLAN for detector' far down in file
+  1. hold a buffer (dense array) of gaussian distributions for wave + background (signal sum)
      add TODO to consider if the distributions are non-gaussian?
   2. use power/mag convolution to phase-align with profile
-  3. compare difference from PEAK to identify magnitude of underlying wave
-     add TODO to consider a more general concept of peak a non-magnitude information
+  FIX TODO: phase alignment and power measurement could be separate steps.  Then power measurement can integrate
+               entire signal to detect under weakest conditions.
+  3. signal stats buffer draws a variance and mean plot of wave + background
+     since variance and mean sum, can infer variance and mean plot of underlying signal from extrema of buffer
+      (a * const + background) - (b * const + background) = (a - b) * const
+     use this to identify noise (and optionally value) magnitude of underlying wave, related to a model extreme
+      .. may want to produce same buffer in profile
   add TODO to work to resist possible corruption attack by using data from multiple sources
+  add TODO to work to resist possible attack by using encrypted timing
+make sure to TODO to check
+  - the impact of not phase-aligning the wave
+  - the significance and accuracy of the measured power of the wave
 
-3.
+4.
   What do we do when it doesn't work?
     1. when ROOT downloads, spend 7 minutes building an example, 7 minutes building a charting example, and 7 minutes trying to make a moving charting example; then 7 more minutes time buffer
           if doesn't work after 28 miuntes, try VTK
@@ -473,4 +512,324 @@ FAILURE PLAN:
 
 
 
+== more detection ==
+My detection plan at the top is not fully clear.
 
+Buffer of distributions for wave + background: since it is not phae-aligned yet, I'm assuming that I mean
+ to keep a separate distribution for each piece of the wave.  "buffer of distributions" -- that must be where
+ "buffer" comes into play; an array of distributions.
+
+fixed above
+
+2 appears clear: convolve with model
+3 looks like I am assuming that the peak represents absolute magnitude.
+Won't this require using the raw data, rather than the absolute data?
+Need to do something fancier here, since my signal is noise and summing the raw data will yield 0.
+
+I think I was rushed, so just considering poewr peak.  But I'm thinking if signal is weaker than ambient noise,
+this will just be the mabient noise magnitude and not the signal magnitude.
+
+If we have a model with noise removed, we could assume that the signal we have is model * constant + ambience.
+I'll have to use stats math to extract model from the power.
+
+that's a big FIX TODO.
+
+I have a strong memory that I found that the difference between values of the signal is significant.
+Have to monologue that up.  Make the profile for now.
+
+The question here is just how the mean of the std dev sums.  I've solved it before.
+
+--
+in detector, may want to use stats to determine likelihood wave is there ... perhaps even crucial to do this !
+written code for this already ...
+the wave we plot is of sampling distributions from the source
+we want the likelihood that the most extreme sampling distribution is non-random
+this gives two metrics: noise detected, signal detected
+
+we'll want to determine the 'noise wave' and 'signal wave' from the model profiled wave
+this will require a loud wave
+the current profile determines a model wave, but it uses magnitude
+my plan here used the standard deviation of the raw value, not the magnitude of the raw value
+the profiler could be altered to also do this ...
+or i could write another class to produce the data again, using the known period ...
+
+the profiler forms a model wave by summing the underlying wave, using magnitudes
+
+the detector keeps a model in the form of an array of stats information or distributions
+i could make a noise/value signal model class
+and convert the profiler to fill it
+then read from it in the detector
+the profile would have to convolve differently
+right now it can use 'vector' operations
+but i haven't written stats stuff for vectors of distributions
+also, comparing the values may change; it could be reasonable to store both
+of course the sums of the magnitudes that the profile uses is very similar to the standard deviations or variances
+used by the new model type
+
+okay we can do this right
+a wave of noise is a sampling distribution: each sample of the wave, is a sample of the noise distribution, scaled
+by the noise envelope of the wave, basically
+so the model wave is a wave of variances / standard deviations
+this would mean making the profiler more complex to understand the difference between variance and mean.
+it seems simplest to assume that abs(val) = std dev, here, because it's mostly noise, likely all
+(if mean were nonzero, i guess you'd want to compare it to std dev converted to 50%, if it's smaller use
+ std dev, if it's larger use value)
+
+okay 2nd class approach
+
+so, detector might have 2 or 3 phases
+- develop wave model (could happen in synchrony of profile) (can continue updating)
+  -> stats model is passed on: vector of variances and means
+- phase-align (can continue updating)
+- calculate power (can be done as soon as phase-aligned)
+
+okay, model needs updating, filling with periods
+when power _changes_ power can be compared to model from elsewhere
+new model is updated, and comparison with old determines power
+
+is old needed to determine power?
+for noise, we take variance of each point in wave, and compare with a constant point in wave.
+this difference gives area under curve
+old might only be needed for phase-alignment, as power measurement is different depending on phaes
+robustness could be increased by simply picking minimum or maximum to compare with ...
+
+ /-\
+-   -_
+
+I'm calculating integral(x - x(r),t)
+i include the subtractino because it removes the background noise component, which is present in both samples
+but mathematically, this should be equivalent to
+  integral(x,t) - x(r)
+      okay, mathematically, that's wrong: you need to multiply by t
+
+integral(x,y) - x(r) * t
+
+  the accuracy of this result kind of depends on the accuracy of one sample of the wave, unfortunately.
+  i'd kind of like to use some stats here.  first let me see if i can note this simpler approach
+
+    i think it's somewhat reasonable to not worry abotu phase alignment, and compare with the lowest or highest
+    sampling distribution in the wave
+
+okay, so I could use a class that just reads a mess of waves, and spews out their power as they come in!
+  it would fill a model class.
+  there are so many waves, it's okay to toss out the profile data for now.  it violates our principal of logging;
+  it's important to log to detect bugs, and this code will only be most useful for development and not as useful
+  for ongoing maintainence, etc ... can still implement writing to file and there is too much data in the air to
+  store any significant chunk of it in a raw format like this
+  could save the model.  lets me see the device as its dying.
+: okay, class to build stats profile of raw wave
+  then that class can spew out power etc
+
+oh my goodness
+can i combine detector with profiler?
+as detector runs it will need to at least update phase, and when it updates phase it gains information on
+period more precisely
+let's increase precision of double output to see if we store constantly-increasing information on period
+length
+
+hrm the result exhausts the precision of a double pretty fast, and then doesn't move.
+this means the deviation of the signal from a simple rational number is smaller than the precision of a double.
+the sample clock inside the rtl-sdr is not synced with the time of day, or the clock in the emitter
+so eventually it will drift
+
+okay, with a fix, the wavelength has not exhausted the precision of a double.
+naturally, since the STD is larger than that, and each one updates it
+
+i've determined that different runs actually DO yield different wavelengths
+could be due to drift in the emitter, but more likely I'm thinking it's due to changes in the behavior of the
+clock in the receiver
+
+this may be related to the ppm of the receiver, and can be correct for without finding the signal and adjusting
+for it.  or, it may be that the signal drifts enough that it will need to be found and adjusted.
+ppm of the receiver: this likely drifts (should test), and will need to be adjusted for
+signal drift: this will exist regardless ....
+if the ppm change were considered signal drift, we could produce the result sooner
+  the implication of such a change would be initial signal drift.
+    stronger weak signals would be undetectable
+    once signal is found, how would be find real period?
+    have to detect signal _again_, and determine phase change.
+
+---
+detector updating period.
+
+detector reads waves until it detects signal, then stores as chunk
+detector then reads more waves until it detects signal again, then stores as chunk
+two chunks can be combined into one chunk with adjusted properties by examining differences in detected signal
+two possibilities:
+  1. one or both detections were spurious.
+        -> this will usually, but not always, show up in the phase adjustment being too large
+  2. detections were not spurious.  improved wavelength is found.
+can then double detection time and run again, refining wavelength more.
+  once so many are built up that detecting takes forever, what then?
+      now we are reading samples but have no new information on the wave
+      we still want to accumulate data until we have power information, and report power
+      good time to retune
+
+on retune, what then?
+  -> we know wavelength, in theory
+     properties of radio imply retuning keeps us in-phase
+      but shape of wave may change ... should use a new model
+
+- [X] can this replace profiler? seems like it does!
+- [X] how to handle new wave model?
+    i think it still works the same.  we assume period is the same, so we can keep updating
+        phase adjustment is more confusing .... how do we compare phase if wave shape may change?
+        we'll need a model at that frequency
+        so i guess phase alignment restarts.  need to build first buffer until wave is detected
+        then acn compare with that chunk to adjust
+    so need to split chunks into an additional part
+    - number of wavelengths period is known by
+    - number of wavelengths used to accumulate data, to properly scale data
+- [X] consider accumulation error
+    we are using similar accumulation to create wave model to compare data against
+    this accumulation, also used inside stats dist, ended up producing significant error
+      i was expecting error due to summing integers cast as doubles to a size large enough that some precision
+      was lost in the sum compared to the precision in the numbers summed
+      but this error seems large compared to the error i would expect from that
+
+DETECTOR
+  we start at one frequency and build up a wave.  once we verify that wave exists, we can store information on it.
+  This information accumulates, slowly, into a single structure that models the wave.
+  When retuning, we'll get a wave model at a different frequency.
+  We can combine the period information with the old frequency, but not the model information.
+  Perhaps keep a model at every frequency: that's a lot of models, maybe condense the storage representation,
+   or optionally just store the power.  Keeping all those models could give a lot fo information on the underlying
+   signal: also allows for phase adjustment when retuning to that frequency again.
+  
+  So we accumulate the period, and then separately the models.
+  A verification is that the phase adjustment on tuning back to an old frequency, lines up with the phase of the
+  old model.
+  Information for period:
+    number of wavelengths
+    number of samples
+  Information for model:
+    stats for each sample
+    number of wavelengths
+  
+  Accumulated vs. active?
+  Active, we'll have a model with sample stats.
+  We'll need to compare the active model with a stored model for that frequency.
+  Once we have both, we can convolve to determine phase shift, and adjust the stored info?
+    -> if the phase shift is large, the model will be really blurry and probably shouldn't be combined with future data.
+       any raw data still stored can be reinterpreted with the new wavelength.
+       this could be a TODO, but more accuracy if old model dropped
+    -> if the phase shift is just one sample, we can just rotate the new model and merge it with the old model
+  Note: this algorithm would benefit from being able to rewind data
+    
+  so: === NEW PLAN for detector ==
+  - total wavelengths
+  - total samples
+  - container for stats models, by frequency:
+      1. "past" object for detected waves, summed together
+      2. "active' object for undetected waves
+      each has:
+      - stats for each model sample
+      - reference for wave merging and shifting, perhaps:
+        - sample time start or end
+        - number of wavelengths involved
+        - number of samples involved
+
+
+  behavior:
+    - receives a chunk of samples, and current tuning frequency
+    - accumulate into active model
+    - detect if the data in the model has reached a threshold of significance. if so:
+      - if past model present:
+        - convolve with past model
+        - shift to phase-align
+        - store updated wavelength measure
+        [ add TODO to possibly adjust interim data ]
+        [ add TODO to possibly handle more accurate onset time guesses, interpolated from shift ]
+      - accumulate active model into past model
+      - update wavelength measures
+
+-> separate model from detector.
+   model for profiler just summed
+   model for detector may use stats accumulators for now, many of them
+
+next: generalize with profiler
+similarities between profiler and detector:
+  - read a bunch of samples, then after processing them update information
+      information may include a change in the cutoff between last block of data and next block of data
+      but because detector downsamples can't really pull that out
+  - keeps a model of wave that is accumulated into (detector upgrades this to handle multiple freqs)
+  - picks areas of data, decides they are periods, and accumulates them into model
+    -> profiler produces new data from data, and does this to the new data before doing it to the original data
+  - produces updated average of wavelength
+
+
+how can I add generality to the new detector class, to allow the profiler to share code with it more?
+  they both pick areas from a datastream that are wavelengths
+  - I could add another layer prior to the area picking, that can produce more datastreams and call out
+    -> kind of like a gnuradio block with many outputs
+  or I could let the layers of data in the profiler be 'special' and just use them as a way to pick onsets in
+    the original data.  this would increase code in the profiler to handle the special case of the original data.
+  the profiler produces each onset sequentially.  the detector produces them all at once.
+
+  -> idea here of picking onset indices in an array of data, and merging them into a model.
+  sounds like a good piece of shared behavior to pull out
+
+-- older:
+how to handle large measure with small active wave?
+I think we can actually combine the information
+
+hmm to find phase drift i will need to store current model separate from prior model, in order to combine them
+might need two vectors of models !
+so:
+    when i track a wave i wan to track the phase drift
+    i'll need something to compare current wave with, see if phase has drifted
+    if i'm just on one frequency, i can wait until i see wave, store it in model #1
+          then wait until I see wave again, storing it in model #2, and once i see it merge #2 down to #1, update
+          information
+    when i tune, things get cnofusing.
+        if I haev wave #1 in old tuning, I can likely use it much later somehow, by adjusting for drift (TODO)
+        if I have wave #2 in old tuning, I _could_ store it ... then I'd have to adjust for drift wrt it as well
+              I could halve my memory usage by not storing it
+              I could also request a tuning timing such that tuning only happens at helpful times
+              I could also take wave #2 and merge it into wave #1 .... what a decision
+        i'll store both waves
+    
+          
+--
+okay, fuzzy bit in detector plan:
+note: _nextOnset is not updated
+
+how will I handle frequency hopping?
+when we leave a frequency we may have a past model stored there
+and we may have an active model stored there
+    the active model will have been read a certain way
+
+it looks like _nextOnset is useful mostly for the next upcoming data, and doesn't need to be stored across freqs
+but when we tune to an old active wave, we'll want to adjust nextOnset !
+  we can probably adjust nextOnset when the wavelength measure is adjusted
+
+and since all freqs have the same period, nextOnset isn't needed per-freq
+
+--
+here's another issue ...
+when we are on a new frequency, we have wavelength information stored from the old frequency to inform us.
+But we don't have an old wave shape in order to update the latest chunk with a phase adjustment.
+We can't use this latest chunk of data to inform the wavelength: we need two chunks.
+
+how to handle these two chunks? and total counts?
+well we have a period count and a sample count from prev freqs
+
+when we store first wave, not much info.
+when we store second wave, we can adjust those two.
+we now can see if there is phase drift between them, and get an approximation for period
+but since we don't know where the wave onset is, we can't line these periods up with the data gathered
+  from the other frequencies.
+
+we could make the assumption that the tuned-to freq is mostly in-phase.  this would allow to continue to
+ accumulate data.  would want to wait until our phase settled before tuning, I suppose
+
+given that the first set of buffers from a new tuning have an unknown phase drift, is there a way to
+  include this lack of information in a later result?
+
+for one thing, when we retune back there, we can continue to adjust
+when we return back to the original frequency, we'll
+
+here we go:
+  when we retune back to the original frequency, we can determine our first phase offset.
+  this phase offset can be used to rotate recordings from other frequencies to line up.
+  I'll want to store with models the time at which their rotation best approximates the phase.

@@ -54,12 +54,12 @@ public:
     }
   }
 
-  constexpr StatsOptions options() const { return OPTIONS; }
-  constexpr bool isSample() const { return OPTIONS & STATS_SAMPLE; }
-  constexpr bool isPopulation() const { return !isSample(); }
-  constexpr bool isInfinite() const { return OPTIONS & STATS_INFINITE; }
-  constexpr bool isFinite() const { return !isInfinite(); }
-  constexpr bool assumeNormal() const { return OPTIONS & STATS_ASSUME_NORMAL; }
+  static constexpr StatsOptions options() { return OPTIONS; }
+  static constexpr bool isSample() { return OPTIONS & STATS_SAMPLE; }
+  static constexpr bool isPopulation() { return !isSample(); }
+  static constexpr bool isInfinite() { return OPTIONS & STATS_INFINITE; }
+  static constexpr bool isFinite() { return !isInfinite(); }
+  static constexpr bool assumeNormal() { return OPTIONS & STATS_ASSUME_NORMAL; }
 };
 
 template <typename T, typename Derived, StatsOptions OPTIONS = STATS_INFINITE>
@@ -76,6 +76,8 @@ protected:
   : _mean(mean),
     _variance(variance)
   { }
+
+  StatsDistributionByMeasures(StatsDistributionByMeasures const &) = default;
 
   void setMeasures(Scalar mean, Scalar variance)
   {
@@ -123,7 +125,8 @@ public:
 
   Scalar sum1() const { return _sum1; }
   Scalar sum2() const { return _sum2; }
-  Scalar sum4() const {
+  Scalar sum4() const
+  {
     if (this->assumeNormal()) throw std::logic_error("not tracking 4th moment");
     return _sum4;
   }
@@ -157,6 +160,8 @@ protected:
     _sum2(sum2),
     _sum4(sum4)
   { }
+
+  StatsDistributionBySums(StatsDistributionBySums const &) = default;
 
   void addSums(size_t count, Scalar sum1/*sum[x]*/, Scalar sum2/*sum[x^2]*/, Scalar sum4/*sum[x^4]*/ = 0)
   {
@@ -253,6 +258,24 @@ private:
     {
     case STATS_MEAN:
       return sampled.variance() / sampleSize;
+    case STATS_VARIANCE:
+      if (sampled.assumeNormal())
+      {
+        // distribution is chi-square with n-1 degrees of freedom
+        // chi^2 = (n-1)s^2 / sigma^2 where sigma^2 is pop variance, and s^2 is sample variance
+        // variance is 2 * degrees of freeedom = 2 * (n - 1)
+        //
+        // s^2 = chi^2 * sigma^2 / (n-1)
+        // variance of s^2 = 2 * (n - 1) * sigma^2 / (n - 1)
+        //                 = 2 * sigma^2
+        //
+        // TODO: use an actual chi-squared distribution
+        return 2 * sampled.variance();
+      }
+      else
+      {
+        throw std::logic_error("unimplemented");
+      }
     case STATS_STANDARD_DEVIATION:
       if (sampled.assumeNormal())
       {
@@ -297,8 +320,10 @@ public:
   StatsAccumulatorHistogram(Scalar binWidth, Scalar initial = 0)
   : binWidth(binWidth),
     binDensity(1.0 / binWidth),
-    binStart(initial * binDensity)
+    binStart(Eigen::numext::floor(initial * binDensity))
   { }
+
+  StatsAccumulatorHistogram(StatsAccumulatorHistogram const &) = default;
 
   [[deprecated("learn statistics and improve library")]]
   StatsAccumulatorHistogram<T, (OPTIONS & ~(STATS_SAMPLE)) | STATS_INFINITE> const &
@@ -307,33 +332,81 @@ public:
     return reinterpret_cast<decltype(fakeInfinitePopulation())>(*this);
   }
 
+  void clear()
+  {
+    this->setSums(0, 0, 0);
+    for (size_t i = 0; i < bins.size(); ++ i)
+      bins[i] = 0;
+  }
+
+  HeapVector<T> const & histogram(T & start, T & width)
+  {
+    start = binStart * binWidth;
+    width = binWidth;
+    return bins;
+  }
+
   template <typename Derived>
-  void add(Eigen::DenseBase<Derived> const & chunk, size_t repeat = 1)
+  Eigen::DenseBase<Derived> const & add(Eigen::DenseBase<Derived> const & chunk, size_t repeat = 1)
   {
     using Eigen::numext::floor;
 
-    this->addSums(chunk.size() * repeat, chunk.sum() * repeat, chunk.derived().matrix().squaredNorm() * repeat, (chunk.derived().array().abs2() * chunk.derived().array().abs2()).sum() * repeat);
+    auto chunkScaled = (chunk.derived().array() * binDensity - binStart + 0.5).floor().eval();
 
-    auto chunkScaled = (chunk.derived().array() * binDensity - binStart).eval();
-
-    int minIdx = floor(chunkScaled.minCoeff());
+    int minIdx = chunkScaled.minCoeff();
+    int maxIdx = chunkScaled.maxCoeff();
     if (minIdx < 0)
     {
       size_t shift = -minIdx;
       growByStart(shift);
-      binStart -= shift;
       chunkScaled += shift;
       minIdx = 0;
+      maxIdx += shift;
     }
+    growToEnd(maxIdx + 1);
+    stretchNonzero(minIdx, maxIdx);
 
-    auto chunkByIndex = chunkScaled.template cast<size_t>();
+    this->addSums(chunk.size() * repeat, chunk.sum() * repeat, chunk.derived().matrix().squaredNorm() * repeat, (chunk.derived().array().abs2() * chunk.derived().array().abs2()).sum() * repeat);
 
-    growToEnd(chunkByIndex.maxCoeff() + 1);
-    
-    bins[chunkByIndex.redux([this, repeat](T lastIdx, T nextIdx) -> T {
+    bins[chunkScaled.redux([this, repeat](T lastIdx, T nextIdx) -> T {
       bins[lastIdx] += repeat;
       return nextIdx;
     })] += repeat;
+
+    return chunk;
+  }
+
+  void add(StatsAccumulatorHistogram<T,OPTIONS> & group)
+  {
+    if (group.size() == 0)
+    {
+      return;
+    }
+    growBoth<OPTIONS>(group);
+    stretchNonzero(group.minNonzero, group.maxNonzero);
+    this->addSums(group.size(), group.sum1(), group.sum2(), group.sum4());
+    bins += group.bins;
+    assert(this->size() == bins.sum());
+  }
+
+  void remove(StatsAccumulatorHistogram<T,OPTIONS> & subgroup)
+  {
+    this->setSums(this->size() - subgroup.size(), this->sum1() - subgroup.sum1(), this->sum2() - subgroup.sum2(), this->sum4() - subgroup.sum4());
+    growBoth(subgroup);
+    bins = (bins - subgroup.bins).round();
+    assert(this->size() == bins.sum());
+    if (this->size() == 0)
+    {
+      return;
+    }
+    while (bins[minNonzero] == 0)
+    {
+      ++ minNonzero;
+    }
+    while (bins[maxNonzero] == 0)
+    {
+      -- maxNonzero;
+    }
   }
 
   // Assuming this distribution is made by summing data with another distribution,
@@ -342,38 +415,115 @@ public:
   template <StatsOptions OPTIONS2>
   StatsAccumulatorHistogram<T, OPTIONS2> withRemovedFromSum(StatsAccumulatorHistogram<T, OPTIONS2> & componentDistribution)
   {
+    // TODO: this function does not succeed when tested.  it's notable that it appears that performing this calculation in the forward direction is much more robust.
+    //        -> mean of result looks reasonable; variance does not.   might have been testing with too small a dataset and with artefacts in recording not accounted for
+    // TODO: negative values in resulting histogram should be removed
+
+    // Convolution:
+    //  - f conv g (n) = sum_m f(m) g(n - m)
+    //                 = sum_m f(n - m) g(m)
+    //  - equal to pointwise product of ffts [Convolution Theorem]
+    //  - fft of convolution is called Cross-Energy Density Spectrum
+    //  - done of histograms, produces distribution of sum after sampling each distribution once
+    //  - in time domain, discrete index 0 of input and output is value 0.0
+    //  - can be reversed using pointwise quotient
+    // Correlation:
+    //  - f corr g (n) = sum_m f*(m) g(m + n)
+    //  - equal to pointwise product of fft 1 and complex conjugate of fft 2 [Correlation Theorem]
+    //  - done of histograms, produces distribution of difference after sampling each distribution once
+    //  - in time domain, discrete index of output is shift required to make two input buffers match
+    //        -> taking the other conjugate results in negative output indices
+    // Buffers are circular, so "negative" values are at tail, with -1 at end.
+
     if (binWidth != componentDistribution.binWidth)
       throw std::logic_error("distributions have mismatching bin widths");
 
-    // 1. resize these dists' bins to match
-    int cbs_bs = componentDistribution.binStart - binStart;
-    if (cbs_bs > 0)
+    // uses convolution theorem in reverse to deconvolve one from another
+    std::cerr << "Component bins sum: " << componentDistribution.bins.sum() << std::endl;
+
+    // 1. size these bins to match and hold result
+    // this - comp = ret
+    // the smallest item in ret could be the smallest item in this minus the largest item in comp
+    auto smallestIdx = minNonzero - (componentDistribution.maxNonzero + componentDistribution.binStart);
+    auto smallest = smallestIdx + binStart;
+    if (smallest > 0)
     {
-      growByStart(cbs_bs);
+      smallest = 0;
+      smallestIdx = -binStart;
     }
-    else if (cbs_bs < 0)
+    if (smallestIdx < 0)
     {
-      componentDistribution.growByStart(-cbs_bs);
+      growByStart(-smallestIdx);
+      smallestIdx = 0;
     }
-    growToEnd(componentDistribution.bins.size());
-    growToEnd(bins.size());
+    // the largest item in ret could be the largest item in this minus the smallest item in comp
+    auto largestIdx = maxNonzero - (componentDistribution.minNonzero + componentDistribution.binStart);
+    auto largest = largestIdx + binStart;
+    if (largest < 0)
+    {
+      largest = 0;
+      largestIdx = -binStart;
+    }
+    if (largestIdx >= bins.size())
+    {
+      growToEnd(largestIdx + 1);
+    }
+
+    growBoth(componentDistribution);
+
+    if (largestIdx != bins.size() - 1)
+    {
+      largestIdx = bins.size() - 1;
+      largest = largestIdx + binStart;
+    }
+    if (binStart != smallest)
+    {
+      smallest = binStart;
+      smallestIdx = 0;
+    }
+
+    size_t bufsize = largest - smallest + 1;
+    assert(bufsize == bins.size());
+    assert(smallest == componentDistribution.binStart);
+    HeapVector<Scalar> buf(bufsize), otherbuf(bufsize);
+
+    // stats histogram buffers for convolution fft align value zero to index zero
+    buf.head(largest + 1) = bins.segment(-binStart, largest + 1);
+    buf.tail(-smallest) = bins.segment(smallest - binStart, -smallest);
+    otherbuf.head(largest + 1) = componentDistribution.bins.segment(-componentDistribution.binStart, largest + 1);
+    otherbuf.tail(-smallest) = componentDistribution.bins.segment(smallest - componentDistribution.binStart, -smallest);
     
     // 2. fft both
-    Eigen::FFT<Scalar> fft(Eigen::default_fft_impl<Scalar>(), {Eigen::FFT<Scalar>::Unscaled | Eigen::FFT<Scalar>::HalfSpectrum});
+    Eigen::FFT<Scalar> fft (Eigen::default_fft_impl<Scalar>(),
+       typename Eigen::FFT<Scalar>::Flag(Eigen::FFT<Scalar>::Unscaled | Eigen::FFT<Scalar>::HalfSpectrum));
 
     HeapVector<typename Eigen::FFT<Scalar>::Complex> fftResult, fftOther;
-    StatsAccumulatorHistogram<T, OPTIONS2> ret(binWidth, binDensity, binStart);
+    StatsAccumulatorHistogram<T, OPTIONS2> ret (binWidth, binDensity, smallest);
+    std::cerr << "Our bins sum: " << buf.sum() << std::endl;
+    std::cerr << "Component bins sum: " << otherbuf.sum() << std::endl;
+    std::cerr << "Product sum: " << (buf.array() * otherbuf.array()).sum() << std::endl;
 
-    fft.fwd(fftResult, bins);
-    fft.fwd(fftOther, componentDistribution.bins);
+    fft.fwd(fftResult, buf);
+    fft.fwd(fftOther, otherbuf);
 
     // 3. take the quotient/product
-    fftResult /= fftOther;
+    // TODO: is it worthwhile to use sparse division trick to map data from a compressed sparse array
+    //          https://stackoverflow.com/questions/36226818/eigen-c-sparse-matrix-elementwise-product-and-divide
+    //   but note that some inf arise from small nonzero values in denominator
+    fftResult.array() /= fftOther.array();
+    fftResult.array() = (fftResult.array() - fftResult.array()).isNaN().select(0, fftResult.array());
+
+    std::cerr << "fftResult sum: " << fftResult.sum() << std::endl;
 
     // 4. ifft quotient/product
-    fft.inv(ret.bins, fftResult);
+    fft.inv(buf, fftResult, bufsize);
+    ret.bins.conservativeResize(bufsize);
+    ret.bins.head(-smallest) = buf.tail(-smallest);
+    ret.bins.tail(largest) = buf.head(largest);
 
-    // 5. divide by larger sample size either before or after ifft to get effective sample sie to be the smaller one (could also sqrt I guess but then we'd have a non-integral samplesize)
+    std::cerr << "ret.bins sum: " << ret.bins.sum() << std::endl;
+
+    // 5. get effective sample size to be the smaller one (could also sqrt I guess but then we'd have a non-integral samplesize)
 
     size_t smallCount, largeCount;
     if (this->size() < componentDistribution.size())
@@ -386,14 +536,21 @@ public:
       largeCount = this->size();
       smallCount = componentDistribution.size();
     }
-    ret.bins /= largeCount;
+    ret.bins *= smallCount / ret.bins.sum();
 
     // 6. return a histogram using result as bins
     // rebuild sums & count
     if (!sumCoeffs)
     {
-      generateSumCoeffs();
-      componentDistribution.sumCoeffs = sumCoeffs;
+      if (componentDistribution.sumCoeffs)
+      {
+        sumCoeffs = componentDistribution.sumCoeffs;
+      }
+      else
+      {
+        generateSumCoeffs();
+        componentDistribution.sumCoeffs = sumCoeffs;
+      }
     }
     ret.sumCoeffs = sumCoeffs;
     ret.updateSums(smallCount);
@@ -407,6 +564,8 @@ private:
   T binStart;
   HeapVector<T> bins;
 
+  size_t minNonzero, maxNonzero;
+
   std::shared_ptr<HeapVectors<T,3>> sumCoeffs;
 
   StatsAccumulatorHistogram(T binWidth, T binDensity, T binStart)
@@ -414,33 +573,84 @@ private:
     binDensity(binDensity),
     binStart(binStart)
   { } 
+
+  template <StatsOptions OPTIONS2>
+  void growBoth(StatsAccumulatorHistogram<T,OPTIONS2> & other)
+  {
+    if (binStart < other.binStart)
+    {
+      other.growByStart(other.binStart - binStart);
+    }
+    else if (other.binStart < binStart)
+    {
+      growByStart(binStart - other.binStart);
+    }
+
+    if (bins.size() > other.bins.size())
+    {
+      other.growToEnd(bins.size());
+    }
+    else if (other.bins.size() > bins.size())
+    {
+      growToEnd(other.bins.size());
+    }
+  }
+
+  void stretchNonzero(size_t possibleMinIdx, size_t possibleMaxIdx)
+  {
+    assert(possibleMinIdx < bins.size());
+    assert(possibleMaxIdx < bins.size());
+    if (this->size() == 0)
+    {
+      minNonzero = possibleMinIdx;
+      maxNonzero = possibleMaxIdx;
+      return;
+    }
+    assert(minNonzero < bins.size());
+    assert(maxNonzero < bins.size());
+    if (possibleMinIdx < minNonzero)
+    {
+      minNonzero = possibleMinIdx;
+    }
+    if (possibleMaxIdx > maxNonzero)
+    {
+      maxNonzero = possibleMaxIdx;
+    }
+  }
   
   void growByStart(size_t shift)
   {
     sumCoeffs.reset();
     size_t oldSize = bins.size();
-    bins.resize(oldSize + shift);
-    bins.tail(oldSize) = bins.head(oldSize);
+    assert(oldSize + shift <= 384); // TODO: remove for non-rtl-sdr
+    bins.conservativeResize(oldSize + shift);
+    bins.tail(oldSize) = bins.head(oldSize).eval();
     bins.head(shift).setZero();
+    assert(binStart - shift >= -256); // TODO: remove for non-rtl-sdr
     binStart -= shift;
+    minNonzero += shift;
+    maxNonzero += shift;
   }
 
   void growToEnd(size_t size)
   {
     if (size > bins.size())
     {
+      size_t oldSize = bins.size();
+      assert(size <= 384); // TODO: remove for non-rtl-sdr
       sumCoeffs.reset();
-      bins.resize(size);
+      bins.conservativeResize(size);
+      bins.tail(size - oldSize).setZero();
     }
   }
 
   void generateSumCoeffs()
   {
-    sumCoeffs = new HeapVectors<T,3>();
+    sumCoeffs.reset(new HeapVectors<T,3>());
     sumCoeffs->resize(bins.size(), 3);
-    for (size_t i = 0; i < sumCoeffs->size(); ++ i)
+    for (size_t i = 0; i < sumCoeffs->rows(); ++ i)
     {
-      T value = binStart + binDensity * i;
+      T value = (binStart + i) * binWidth;
       for (size_t j = 0; j < 3; ++ j)
       {
         (*sumCoeffs)(i, j) = value;
@@ -451,9 +661,27 @@ private:
 
   void updateSums(size_t size)
   {
-    auto sums = bins.array() * sumCoeffs.colwise();
-    setSums(size, sumCoeffs.col(0), sumCoeffs.col(1), sumCoeffs.col(2));
+    // bins has n rows
+    // sumCoeffs has n rows and 3 columns
+    auto sums = (sumCoeffs->array().colwise() * bins.array()).colwise().sum().eval();
+    this->setSums(size, sums[0], sums[1], sums[2]);
   }
+};
+
+template <typename T, StatsOptions OPTIONS = STATS_SAMPLE | STATS_ASSUME_NORMAL>
+class StatsDistributionBrief : public StatsDistributionByMeasures<T, StatsDistributionBrief<T, OPTIONS>, OPTIONS>
+{
+  using Measures = StatsDistributionByMeasures<T, StatsDistributionBrief<T, OPTIONS>, OPTIONS>;
+public:
+  using Scalar = T;
+
+  StatsDistributionBrief(Scalar mean, Scalar variance)
+  : Measures(mean, variance)
+  { }
+
+  using Measures::setMeasures;
+  using Measures::setMean;
+  using Measures::setVariance;
 };
 
 template <typename T, StatsOptions OPTIONS = STATS_SAMPLE | STATS_ASSUME_NORMAL>
@@ -468,6 +696,11 @@ public:
   StatsAccumulatorNormal()
   { }
 
+  void clear()
+  {
+    this->setSums(0, 0, 0);
+  }
+
   template <typename Derived>
   void add(Eigen::DenseBase<Derived> const & chunk, size_t repeat = 1)
   {
@@ -480,6 +713,11 @@ public:
   {
     auto square = value * value;
     this->addSums(repeat, value * repeat, square * repeat);
+  }
+
+  void add(StatsAccumulatorNormal<T, OPTIONS> const & group)
+  {
+    this->addSums(group.size(), group.sum1(), group.sum2());
   }
 
   void remove(StatsAccumulatorNormal<T, OPTIONS> const & subgroup)
@@ -1148,3 +1386,115 @@ private:
 // I guess I should make a lightweight view
 // hrm that means the view can't call derived functions =S which might not
 // be needed but is unneccessarily limiting
+
+// okay there could be a delay bug after the first buffer unless I fix this
+// I'm pushing to the back of these heapvectors but they prform a memory
+// allocation every time I do that, unlike std::vectors which only do it
+// occasionally but aren't usable for quick math unless wrapped in eigen
+// to be used this way
+// maybe I'll use std::vectors but wrap them in eigen vectors
+
+// Accumulator problem:
+// I'm using a histogram stat, I think, to calculate a mean period
+// the mean that spews out of the stat accumulator is incorrect, off by a little
+//
+// - is this from error accumulating many integers in a double?
+// - if not, what is it from?
+// - will this affect the calculated model waveform, which uses accumulation like this too?
+//    -> errors could be considered noise ... just decreases strength of signal
+// - [ ] add todos noting this error, keep going
+
+// thoughts regarding fixing accumulation precision:
+// note: accumulating many floats will lose precision, almost always
+// - could use integers to sum, uint64_t, and throw on overflow
+//   samples from hardware have finite precision, which would make this reasonable
+// - could use rational numbers, only issue is there are unlikely to be fast libraries for doing calculations
+//   with them.  the code needs to be able to complete the analysis of a buffer before the next buffer arrives,
+//   basically
+// - could use integers combined with rational numbers ....
+//
+// - i could make a class for a vector of rational numbers.
+//   there are only a few operations i need:
+//   - summation
+//   - division
+//   - small integer powers
+//   basic arithmetic.
+//    -> note: it could make sense to make a vector stats accumulator with this; would also speed things up a lot
+//   probably not needed yet.
+// let's try throwing rational numbers at eigen and see what happens
+// could we be backendy in a ... the approach karl desires is unreasonable for his goal i think
+// yeah makes sense, that should be done if required, the work involved to test it will be needed anyway
+//
+// since i'll likely be coding some new math backend, i should switch to boost and to gnuradio
+// and merge my work with more general approaches.
+//
+// what kinds of generality will i want to code in a way that combines with other things I could write,
+// or to make it usable by other people?
+// - algorithmic plugging?
+//    i'd like to separate out the common pieces of my algorithms
+//    so that when i am researching data analysis approaches using heuristics, I can replace different
+//    pieces of the heuristics without having to start over
+//    i'd also like to parameterize these things so that intelligent code can try different approaches
+//    i was doing this previously for finding weak signals without profiling.
+//    i came up with many common algorithms, broke them into 3 conceptual pieces, to make the handling
+//    pluggable.  i'm pretty sure my framework would have provided for my current approach to plug right in.
+// X- root integration?
+// - -> use gnuradio, soapy, pothos, and/or osmosdr
+// - -> use BOOST stats
+//
+// - -> use BOOST accumulators
+//          see plan.txt for jumping-off points
+// - -> make a vector math wrapper to plug in vector math libs or hw acceleration
+//
+// pluggable concepts for analysis frameworks:
+//   algorithms for:
+//    - finding optima by minimizing or maximizing a parameter
+//    - given data desired, and data available, what data to provide
+//          -> math takes microseconds, which are in limited supply
+//          -> we want to perform calculations on data that is judged to be valuable
+//   norms:
+//    - providing for pluggable access to algorithm parameters
+//    - specifying what data is needed next
+//    - specifying what data is needed to start
+//
+// so, current convolution approach fits into some of these, and may indicate more
+// we have a huge stream of incoming data offered in dense, large buffers
+// -> buffers need to be a certain size to be useful
+// we downsample the data (pluggable algorithm)
+//   and then convolve the downsampled data (pluggable algorithm)
+//
+// downsampling reduces the data available by summarizing it
+//
+// we then upsample and repeat the downsampling, using the results of the earlier downsampling to inform
+// what data to look at
+//
+// karl's tree approach likely achieved a similar thing, it just had a bottom-up view rather than a top-down
+// one.  plusses and minuses to both
+// or something like that
+//
+// so this periodfinder that convolves produces PROPOSALS of periods to try
+// it has a TECHNIQUE for checking them, which is one-by-one
+// and it has a TECHNIQUE for PRODUCING NEW PROPOSALS
+//
+// it also has a TECHNIQUE for MASSAGING THE DATA to be have DENSER MEANING, so that the proposal space is
+// smaller.
+//
+// in general, profile and detection have some of these things ...
+// profile tries to DETERMINE the WAVELENGTH and the ONSET TIMES
+// detector NEEDS and DETERMINES the WAVELENGTH
+// detector DETERMINES the ONSET TIMES and the POWER
+//
+// i'd like a more general class to let me replug some of these concepts or algorithms
+// under the assumption i will run into more problems
+// and to make the code reusable for other purposes
+//
+// tree approach was adaptive subsamping
+// i think it kept statistics for chunks of the data, it GUESSED possible ONSET TIMES and used EVALUATIONS
+// of those guesses to GUESS NEW onset times
+// it likely used DENSE ACTIVE DATA BUFFERS and METRICS of old data
+//    ... long vectors of metrics sometimes are used, summarizing old data
+//
+// maybe i'll just make a general class
+// and use it to separate things out more and more as i encounter new approaches
+// maybe try to put 2 different approaches in it
+// if everything has a base class, then i can move concepts up towards the base as i use them
