@@ -18,7 +18,7 @@
  */
 
 /****
- * https://en.wikipedia.org/wiki/Variance#Distribution_of_the_sample_variance
+ * https://learnemc.com/shielding-theory
  * Indicates the needed SE to prevent detectable signals completely is 240 dB.
  *      (this is followed by a flawed statement that 100 dB is significant, rooted in the assumption that the emitter and receiver share the same dynamic range)
  ***/
@@ -31,7 +31,7 @@
 ////////
 // 2018-01-03: another attempt
 // - [X] make a plan for comparing sets of recordings to identify S.E. using notes marked with ====> below
-//      -> plan is now in TODO items here
+//      -> plan is now in checkboxe here
 // - [ ] compare variance of deconvolution result to sum of original variances?
 //        -> for error tracking, want resulting error to be accurate
 //        -> we'll likely want to use the result that is consistently larger for large sample sizes
