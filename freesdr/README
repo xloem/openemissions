@@ -1,9 +1,9 @@
 # freesdr
 
-Some reusable work towards working with signals, intended to very generic but with a focus on Pothos and ROOT.
+Some reusable work towards working with signals, intended to be very generic but with a focus on Pothos and ROOT.
 
 Why Pothos?
-  - the rtl-sdr libraries are hosted on github and the maintainer is responsive, making contribution more accessible
+  - the rtl-sdr libraries are hosted on github (osmosdr uses a private system) and the maintainer is responsive, making contribution more accessible
 
 Why ROOT?
   - it provids a gateway to powerful analysis of information

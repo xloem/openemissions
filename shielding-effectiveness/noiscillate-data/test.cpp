@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -11,6 +12,148 @@
 
 #include "rtlsdriqdump.hpp"
 #include "soapylive.hpp"
+
+/****
+ * SUCCESSFUL APPROACH should be 2018-01-03 below, seems accurate and reasonably fast to implement
+ */
+
+/****
+ * https://en.wikipedia.org/wiki/Variance#Distribution_of_the_sample_variance
+ * Indicates the needed SE to prevent detectable signals completely is 240 dB.
+ *      (this is followed by a flawed statement that 100 dB is significant, rooted in the assumption that the emitter and receiver share the same dynamic range)
+ ***/
+
+/***
+ * The parameter used for Shielding Effectiveness is 20 log |E|, where |E| is the magnitude of the field strength.
+ **/
+
+
+////////
+// 2018-01-03: another attempt
+// - [X] make a plan for comparing sets of recordings to identify S.E. using notes marked with ====> below
+//      -> plan is now in TODO items here
+// - [ ] compare variance of deconvolution result to sum of original variances?
+//        -> for error tracking, want resulting error to be accurate
+//        -> we'll likely want to use the result that is consistently larger for large sample sizes
+// - [ ] move recording code from test.cpp to 1-1-prof-env.cpp
+//          -> 1-1-prof-env will make a hist for an environment
+//          -> it will require the environment number and the emitter setup numbers that are active
+//          -> it will show a chart of variance + error during recording
+//              (variance appears to be the correct stats SE metric, see below)
+//    - [ ] user passes environment number, emitter numbers, soapy args, and filename
+//    - [ ] add string list to hist format for source data (soapy args perhaps)
+//            string 0: source type
+//            strings: source resources
+//    - [ ] add environment numbers and emitter numbers to hist format
+//       - [ ] use version field
+//       - [ ] convert old hists
+//       - [ ] ensure begin and end timestamps are included
+//    - [ ] show a chart of variance + error during recording
+// - [ ] make 1-2-gen-diff-hist.cpp
+//          -> combines two environment hists and produces emitter hist of changed emitter
+//    - [ ] user passes 2 filenames, and output filename
+//    - [ ] enforce that only 1 emitter changed between hists
+//    - [ ] enforce that both hists are same environment
+//    - [ ] enforce that both hists used same recording setup?
+//    - [ ] use deconvolution to produce second hist
+//    - [ ] output filenames of inputs in source list of file
+// - [ ] make 1-3-plot-se.cpp
+//          -> combines two emitter hists and plots shielding effectiveness with error
+//    - [ ] enforce that emitter hists are both emitter hists
+//    - [ ] enforce that emitter hists are of the same emitter
+//    - [ ] plot SE
+//          -> SE = 20 log (variance1 / variance2) = 20 log variance1 - 20 log variance2
+//              2 * stddev of variance can be propogataed through with mins and maxes to plot error
+//    - [ ] plot comparison between emitter distributions
+//          multiply dist2 by SE (at each freq) to estimate dist1 and overlay them to show similarity to user
+//          
+//
+
+// ok ... so I want the ratio fo the field strength and what I have is a distribution of samples of it, where it is a wave.
+// it's notable that this disrtibution is relatively complete and likely samples the actual fields strength, but that for a given wave many of these samples will be small because the wave crosses the origin.
+// What I'm looking at here for S.E. is the magnitude of the distribution that changes when the strength of the emitter changes.
+// ====> The assumption is that this entire distribution will have all its values scaled by a constant. <====
+//
+// What do I plot to see this?
+// - I can form a distribution of each environment.  I can substract these distributions from each-other to identify a distribution of a signal that is present in one and missing from the other, if that is the only change.
+// So I can identify:
+//  - distribution of unshielded environment, no emitter
+//  - distribution of unshielded environment + emitter
+//  - distribution of shielded environment, no emitter
+//  - distribution of shielded environment + shielded emitter
+//  - distribution of emitter
+//  - distribution of shielded emitter
+//  then S.E is the distribution of shielding?
+//  the assumption and hope is that the last two dsitributions, of the emittr and shielded emitter, are precisely scaled versions of each other
+//  this will never be true because the samples will be collected at different times
+//  to find the S.E. I will need to divide one distribution by the other
+//  I store the dsitributions as histograms
+//      -> I could invert the histograms, and divide ... loss of precision
+//      -> I could take the mean
+//  ======>
+//  here: we take the variance of both, determine the ratio between them, then multiply one by the ratio, and determine the similarity to determine correctness.
+//        possibly want to implement skewness to judge similarity
+//  <======
+//  - [X] discern how to judge error of 20 log (sigma1^2 / sigma2^2)
+//        -> seems the most accurt would be pass the min and max vals through the func and use the result !
+//  - [ ] discern how to judge the error in sigma^2 after deconvolution with another histogram?
+//      -> skip this for now
+//      -> since this is a linear sum (subtraction) we might expect the variances to sum
+//
+//  plan for setup:
+//    ====> It's important to record every environment with emitter both enable and disabled, because non-emitter noise is generated even by recording equipment, and each environment will create a different profile
+//    ===> Ideally stay motionless and place all objects in same positions during recording, as everything has EM properties that affect things
+//  1. record at least 2 environments where only shielding has changed between them
+//      Environmen recording:
+//      A. record without emitter
+//      B. record with emitter
+//  2. Load 2 environments into chart, it can plot S.E. with approximate error
+//    -> S.E. is based on ratio between variances of distributions, so the error of the variance is what to plot during a single recording
+//
+//  how to combine the recording with and without emitter to produce emitter dist?
+//  the math for this is mostly implemented
+//  but what interface?
+//  can record one distribution, then end
+//  when two are loaded, make a util to combine them into a 3rd
+//
+//  maybe make 3 utils
+//  - profile noise environment
+//    meta:
+//      - environment number
+//      - emitter numbers that are active
+//  - combine two noise environments only changing in 1 emitter activity to produce emitter hist
+//  - combine two matching emitter hists with differing environments to produce S.E.
+//
+//  I have a .dhist file that stores these custom histograms.
+//  Can I easily add simple metadata to verify users don't screw up
+//  maybe give each environment a number, and each emitter setup a number
+//  yeah!
+//
+
+////////
+// 2018-12-19: another attempt
+// plan is to just fill wideband stats buckets
+//    reusing as much work I am familiar with as possible
+// can use dist subtraction to measure shielding effectiveness
+// may not even need a terminator for antenna to measure internal noise
+//
+//      with noise running: background noise + signal noise
+//      without noise running: backgruond noise
+//      signal noise discerned from subtraction math (convolution etc)
+//      full sweep before situation is manually changed
+//
+// - [X] make processor to fill buckets
+//    -> base it on the fancy processor with a bug
+//    - [X] read and store data from file
+// - [ ] make main.cpp call simple processor
+// - [ ] run 3 tests: no noise, noise, and shield around generator or receiver
+// - [ ] plot charts of recordings, and of differences from background
+//
+// ok issue ... how do i compare the different data?
+// let's see how i did before
+//  -> waveformmodel took a stat template parameter
+//     integration was done with regard to stat.  
+//     StatsDistributionBrief was created, and measures set to the difference of the recording from the background
 
 ////////
 // CURRENT STATUS AND PLAN
@@ -2036,7 +2179,7 @@ public:
   { }
 
   template <class Derived>
-  int operator()(Eigen::MatrixBase<Derived> const & first, Eigen::MatrixBase<Derived> const & second)
+  int operator()(Eigen::MatrixBase<Derived> const & first, Eigen::MatrixBase<Derived> const & second, int min, int max)
   {
     using Eigen::numext::mini;
     //_fftResult1.conservativeResize(first.size());
@@ -2048,15 +2191,16 @@ public:
     _fftResult2.array() *= _fftResult1.array().conjugate(); // pointwise product into _fftResult2
     _fft.inv(_correlation, _fftResult2, nfft); // time-domain into _correlation
 
-    int idx;
-    _correlation.maxCoeff(&idx);
-    if (idx * 2 >= _correlation.size())
+    int posIdx, negIdx;
+    auto negMax = _correlation.tail(-min).maxCoeff(&negIdx);
+    auto posMax = _correlation.head(max).maxCoeff(&posIdx);
+    if (negMax > posMax)
     {
-      return idx - _correlation.size();
+      return negIdx + min;
     }
     else
     {
-      return idx;
+      return posIdx;
     }
   }
 
@@ -2291,6 +2435,15 @@ public:
     return significance<STATISTIC>();
   }
 
+  // 2018-11-21: NEXT
+  // - freq shifting bug could be causing trouble with separating backgruond noise
+  //   fix it by taking the first frquency as a calibration frequency with known presence of signal
+  //     (probably pass this freq to verify)
+  //   only allow large shifts at calibration frequency
+  //   craft perfect data and run the measurement on the perfect data to verify that the time accumulation is correct
+  // - switch to an abnormal frequency.  this will mean upgrading the generator
+  //   can also try lower frequencies, might have more primes there
+
   template <StatsStatistic STAT>
   Scalar integrate() const
   {
@@ -2466,10 +2619,12 @@ public:
     _lastPhaseTimestamp(0),
     _lastPhasePeriod(0),
     _initial{initial,initial},
+    _calibrated(false),
     _approxWavelen(approxWavelen),
     _correlationFunctor(correlationFunctor),
     _minSamplesPerSignificance(minSamplesPerSignificance),
-    _onsetStartPeriods(0)
+    _onsetStartPeriods(0),
+    _calibration{initial}
   { }
 
   size_t bufferSizeMin() const
@@ -2589,8 +2744,55 @@ public:
         // rotate active wave to be in-phase with past wave
         state.past.get(_pastBuf);
         state.active.get(_activeBuf);
-        int rotation = _correlationFunctor(_activeBuf, _pastBuf);
+        constexpr Scalar tolerance = 4; // TODO: this hardcodes the amount of samples the past period measurements could be off by, after calibration
+                                        //       really it should be determined with stats based on the noise present
+        auto historicalSampleSize = _lastPhaseTimestamp - _firstPhaseTimestamp;
+        Scalar historicalPeriodSize = _lastPhasePeriod - _firstPhasePeriod;
+        auto nextSampleSize = activePhaseTimestamp - _firstPhaseTimestamp;
+        Scalar nextPeriodSize = activePhasePeriod - _firstPhasePeriod;
+        Scalar periodRatio = nextPeriodSize / historicalPeriodSize;
+        int goodMinRotation = nextSampleSize - periodRatio * (historicalSampleSize + tolerance);
+        int goodMaxRotation = nextSampleSize - periodRatio * (historicalSampleSize - tolerance);
+        int minRotation = _calibrated ? goodMinRotation : -(_activeBuf.size() / 2);
+        int maxRotation = _calibrated ? goodMaxRotation : (_activeBuf.size() / 2);
+        int rotation = _correlationFunctor(_activeBuf, _pastBuf, minRotation, maxRotation);
         std::cerr << "Drift: " << -rotation/Scalar(activePhasePeriod - state.lastPhasePeriod) << std::endl;
+
+        // if we have already calibrated, I want to limit the behavior of the correlation functor
+        // within a window of possible rotations
+        //
+        // how do I determine this window?
+        // when calibrated, we used so many periods to calibrate
+        // we can assume the number of periods used to calibrate is the difference between the phase period numbers of the first and end calibration chunks
+        // now, we have new information indicating some amount of drift.
+        //
+        // okay, so, freq is guessed after finding maximum over A periods
+        // we have B more periods, and we've found a new frequency: a new wavelength.
+        // I expect the new wavelength to only differ from the old within the precision acquired bby adding B periods to the measurement
+        // maybe by twice that, or four times, given noise
+        // this will relate to the time of a sample.
+        //
+        // if I have A periods, how precisely do I know the wavelength?  I know it's not (n-1)/A, and I know it's not (n+1)/A:
+        //  I know it within 1 / A samples.
+        // when I measure a new period, I measure it via n2/B
+        // I expect n2/B to be within (n-1)/A and (n+1)/A
+        // i'm willing for it to move a couple 1/A's to the side, but more than that shows jitter, or that the signas we're responding to are different
+        // in the different attempts to measure.
+        // or that there is a bug in the data accumulation, which i could test by crafting perfect data!
+        // so, what do I want the rotation to be limited by?
+        // the rotation is what now?
+        // the rotation is the change in the timestamp of our new phase-equivalent period.  so it's the error in the measurement of n2.
+        // okay, new period = (n2adj) / B
+        //       old period = n / A
+        //       n2adj = n2 - rotation
+        //       (n - tolerance)/A <= (n2 - rotation) / B <= (n + tolerance)/A
+        //       it's notable that n/A is _approxWavelen
+        //       _approxWavelen - tolerance/A <= (n2 - rotation) / B <= _approxWavelen + tolerance/A
+        //       (B/A) (n - tolerance) <= n2 - rotation <= (B/A) (n + tolerance)
+        //       (B/A) (tolerance - n) >= rotation - n2 >= (B/A) (-tolerance - n)
+        //       (B/A) (tolerance - n) + n2 >= rotation >= (B/A) (-tolerance - n) + n2
+        //       rotation should be within +- ((B/A)(tolerance + n) - n2)
+        //      ISSUE! try this with really large A and small additional B to ensure works ... ran into mismatch
 
         // rotate stored sum
         state.active.rotate(rotation);
@@ -2623,24 +2825,38 @@ public:
         //           gains made in ability to resolve signal may be matched by
         //           losses in precision of metrics from blur?
 
-        // adjust other freqs
         if (&state == _canonicalModel)
         {
-          for (auto & otherModel : _unpinnedModels)
+          if (_calibrated)
           {
-            auto correctedFirstPhaseTimestamp =
-              (otherModel->firstPhasePeriod - _firstPhasePeriod) * (_lastPhaseTimestamp - _firstPhaseTimestamp) / (_lastPhasePeriod - _firstPhasePeriod) + _firstPhaseTimestamp;
-            auto correctedLastPhaseTimestamp =
-              (otherModel->lastPhasePeriod - _firstPhasePeriod) * (_lastPhaseTimestamp - _firstPhaseTimestamp) / (_lastPhasePeriod - _firstPhasePeriod) + _firstPhaseTimestamp;
-
-            auto drift = (correctedFirstPhaseTimestamp - otherModel->firstPhaseTimestamp + correctedLastPhaseTimestamp - otherModel->lastPhaseTimestamp) / 2;
-
-            otherModel->past.rotate(-drift);
-            otherModel->firstPhaseTimestamp += drift;
-            otherModel->lastPhaseTimestamp += drift;
-            otherModel->pinned = true;
+            // adjust other freqs
+            for (auto & otherModel : _unpinnedModels)
+            {
+              auto correctedFirstPhaseTimestamp =
+                (otherModel->firstPhasePeriod - _firstPhasePeriod) * (_lastPhaseTimestamp - _firstPhaseTimestamp) / (_lastPhasePeriod - _firstPhasePeriod) + _firstPhaseTimestamp;
+              auto correctedLastPhaseTimestamp =
+                (otherModel->lastPhasePeriod - _firstPhasePeriod) * (_lastPhaseTimestamp - _firstPhaseTimestamp) / (_lastPhasePeriod - _firstPhasePeriod) + _firstPhaseTimestamp;
+  
+              auto drift = (correctedFirstPhaseTimestamp - otherModel->firstPhaseTimestamp + correctedLastPhaseTimestamp - otherModel->lastPhaseTimestamp) / 2;
+  
+              otherModel->past.rotate(-drift);
+              otherModel->firstPhaseTimestamp += drift;
+              otherModel->lastPhaseTimestamp += drift;
+              otherModel->pinned = true;
+            }
+            _unpinnedModels.clear();
           }
-          _unpinnedModels.clear();
+          else if (minRotation < rotation && rotation < maxRotation)
+          {
+            _calibrated = true;
+            std::cerr << "CALIBRATED to wavelength of " << _approxWavelen << " samples." << std::endl;
+            std::cerr << "Discarding calibration data." << std::endl;
+
+            // the calibration data was summed from waves that were not phase-aligned prior to calibration,
+            // so it is expected to be blurry and have inaccurate magnitudes
+            _calibration.add(state.past);
+            state.past.clear();
+          }
         }
       }
       else
@@ -2738,6 +2954,7 @@ private:
   int64_t _lastPhaseTimestamp;
   int64_t _lastPhasePeriod;
   FrequencyState _initial;
+  bool _calibrated;
   Scalar _approxWavelen; // FIX TODO: this is used for period timing and uses of it would need to be changed to use cryptographic timing to provide robustness in the face of noise with equal timing to detected source
   CorrelationFunctorType _correlationFunctor;
   Scalar _minSamplesPerSignificance;
@@ -2749,6 +2966,107 @@ private:
 
   HeapVector<Scalar> _pastBuf;
   HeapVector<Scalar> _activeBuf;
+
+  WaveformModel _calibration;
+};
+
+template <typename _Scalar, typename _StatsAccumulator, StatsStatistic STATISTIC = STATS_MEAN>
+class ProcessorNoiseProfile
+{
+public:
+  using StatsAccumulator = _StatsAccumulator;
+  using Scalar = _Scalar;
+
+  ProcessorNoiseProfile(std::string fname, StatsAccumulator const & initial)
+  : _initial(initial),
+    _totalSamps(0),
+    _fname(fname)
+  {
+    std::ifstream f(fname);
+    f.ignore(1);
+    if (f.good())
+    {
+      f.seekg(0, std::ios_base::beg);
+      uint64_t count;
+      f.read((char*)&count, sizeof(count));
+      for (uint64_t i = 0; i < count; ++ i)
+      {
+        Scalar freq;
+        f.read((char*)&freq, sizeof(freq));
+        _binsByFrequency.emplace(freq, f);
+      }
+    }
+  }
+
+  void write()
+  {
+    std::string tmpname = _fname + "_";
+    std::ofstream f(tmpname);
+    uint64_t count = _binsByFrequency.size();
+    f.write((char*)&count, sizeof(count));
+    for (auto & bin : _binsByFrequency)
+    {
+      Scalar freq = bin.first;
+      f.write((char*)&freq, sizeof(freq));
+      bin.second.write(f);
+    }
+    f.close();
+    std::rename(tmpname.c_str(), _fname.c_str());
+  }
+
+  size_t bufferSizeMin() const
+  {
+    return 1;
+  }
+
+  size_t bufferSizeMultiple() const
+  {
+    return 1;
+  }
+
+  size_t bufferSizeMax() const
+  {
+    return std::numeric_limits<size_t>::max();
+  }
+
+  template <class DataFeeder, class Derived>
+  void process(DataFeeder & feeder, Eigen::DenseBase<Derived> const & chunk, RecBufMeta const & meta)
+  {
+    _binsByFrequency.emplace(std::make_pair(meta.freq, _initial)).first->second.add(chunk);
+    _totalSamps += chunk.size();
+  }
+
+  uint64_t periodsConsidered() const
+  {
+    return _totalSamps;
+  }
+
+  Scalar bestPeriod() const
+  {
+    return 1;
+  }
+
+  Scalar bestFrequency() const
+  {
+    return 1;
+  }
+
+  Scalar bestMag(Scalar & freq)
+  {
+    return _binsByFrequency.at(freq).template get<STATISTIC>();
+  }
+
+  Scalar bestMagVariance(Scalar & freq)
+  {
+    auto & bin = _binsByFrequency.at(freq);
+    return StatsDistributionSampling<Scalar, STATISTIC>(bin.fakeInfinitePopulation(), bin.size()).variance();
+  }
+
+private:
+  StatsAccumulator _initial;
+  std::map<Scalar, StatsAccumulator> _binsByFrequency;
+  uint64_t _totalSamps;
+  std::string _fname;
 };
 
 #if 0
@@ -2987,10 +3305,16 @@ int main(int argc, char const * const * argv)
   //            rotation = 25943
   // 4. - [ ] fix period integration to not include background noise
 
+  std::string file1, file2;
+  if (argc < 2) return -1;
+  file1 = argv[1];
+  if (argc > 2) file2 = argv[2];
+
   //RtlSdrIQDump data(std::cin);
   
-  constexpr Scalar MIN_TUNE_FREQ =  400000000;
-  constexpr Scalar MAX_TUNE_FREQ = 1600000000;
+  constexpr Scalar MIN_TUNE_FREQ =  200000000;
+  constexpr Scalar MAX_TUNE_FREQ = 1400000000;
+  constexpr Scalar CALIBRATION_FREQ = 600000000;
   constexpr Scalar FREQ_GUESS = 8000;
   constexpr Scalar FREQ_GUESS_ERROR = FREQ_GUESS / 100;
   constexpr size_t SAMPLERATE = 2400000;
@@ -3004,10 +3328,11 @@ int main(int argc, char const * const * argv)
   constexpr Scalar BUFFERS_PER_SEC = SAMPLERATE / double(FFT_BUFFERSIZE);
   //PeriodFinderFFT<Scalar> periodFinder(SAMPLERATE / (FREQ_GUESS * 2) + 2, FFT_BUFFERSIZE * DOWNSAMPLING / 5 - 2, FFT_BUFFERSIZE, DOWNSAMPLING);
 
-  WaveformModelStatsAccumulator<StatsAccumulatorHistogram<Scalar>, STATS_STANDARD_DEVIATION> initialModel({data.epsilon()}, SAMPLERATE / Scalar(FREQ_GUESS - FREQ_GUESS_ERROR));
+  //WaveformModelStatsAccumulator<StatsAccumulatorHistogram<Scalar>, STATS_STANDARD_DEVIATION> initialModel({data.epsilon()}, SAMPLERATE / Scalar(FREQ_GUESS - FREQ_GUESS_ERROR));
   //WaveformModelStatsAccumulator<StatsAccumulatorNormal<Scalar>, STATS_STANDARD_DEVIATION> initialModel({}, SAMPLERATE / Scalar(FREQ_GUESS - FREQ_GUESS_ERROR));
 
-  PeriodProcessorDetectKnownCorrelate<Scalar, decltype(initialModel), FFTCorrelationFunctor<Scalar>> processor(initialModel, SAMPLERATE / Scalar(FREQ_GUESS), {}, Scalar(SAMPLERATE) * 60 * 60 * 24 * 365.25 * 100);
+  ProcessorNoiseProfile<Scalar, StatsAccumulatorHistogram<Scalar>, STATS_VARIANCE> processor(file1, {data.epsilon()});
+  //PeriodProcessorDetectKnownCorrelate<Scalar, decltype(initialModel), FFTCorrelationFunctor<Scalar>> processor(initialModel, SAMPLERATE / Scalar(FREQ_GUESS), {}, Scalar(SAMPLERATE) * 60 * 60 * 24 * 365.25 * 100);
   //PeriodProcessorConvolveDownsample<Scalar> processor(SAMPLERATE / (FREQ_GUESS + FREQ_GUESS_ERROR) - 1, SAMPLERATE / (FREQ_GUESS - FREQ_GUESS_ERROR) + 1, SAMPLERATE / (FREQ_GUESS) / 6);
   DataFeeder<Scalar, decltype(data), decltype(processor)> feeder(data, processor);
 
@@ -3021,6 +3346,7 @@ int main(int argc, char const * const * argv)
   std::cout.precision(real_limits<Complex>::max_digits10);
   std::cerr.precision(real_limits<Complex>::max_digits10);
 
+  bool placedCalibrationFreq = false;
   std::vector<TuningFreq> tune_freqs{};
   for (Scalar freq = MIN_TUNE_FREQ; freq <= MAX_TUNE_FREQ; freq += TUNE_WIDTH)
   {
@@ -3028,6 +3354,11 @@ int main(int argc, char const * const * argv)
     obj.freq = freq;
     obj.idx = tune_freqs.size();
     tune_freqs.push_back(obj);
+    if (freq >= CALIBRATION_FREQ && placedCalibrationFreq == false)
+    {
+      std::swap(tune_freqs[0], tune_freqs.back());
+      placedCalibrationFreq = true;
+    }
   }
   std::vector<Scalar> tune_dBs(tune_freqs.size());
 
@@ -3040,7 +3371,7 @@ int main(int argc, char const * const * argv)
   //tune_freqs.resize(tune_freqs.size() / 10);
   //tune_dBs.resize(tune_freqs.size());
 
-  std::shuffle(tune_freqs.begin(), tune_freqs.end(), rand_gen);
+  std::shuffle(tune_freqs.begin()++, tune_freqs.end(), rand_gen);
 
   auto curFreq_it = tune_freqs.begin();
   data.tune(curFreq_it->freq);
@@ -3069,9 +3400,9 @@ int main(int argc, char const * const * argv)
       auto secs = std::chrono::duration_cast<std::chrono::seconds>(remainingTime);
       std::cerr.fill('0');
       std::cerr << "Tuned to: " << curFreq_it->freq << " Hz (" << percentDone*100 << "% ETA: " << std::setw(2) << hrs.count() << ":" << std::setw(2) << mins.count() << ":" << std::setw(2) << secs.count() << ")" << std::endl;
-      std::cerr << "Periods: " << lastPeriods << std::endl;
-      std::cerr << "Wavelength Avg: " << processor.bestPeriod() / double(SAMPLERATE) << std::endl;
-      std::cerr << "Frequency Avg: " << double(SAMPLERATE) * processor.bestFrequency() << std::endl;
+      //std::cerr << "Periods: " << lastPeriods << std::endl;
+      //std::cerr << "Wavelength Avg: " << processor.bestPeriod() / double(SAMPLERATE) << std::endl;
+      //std::cerr << "Frequency Avg: " << double(SAMPLERATE) * processor.bestFrequency() << std::endl;
       //std::cerr << "Wavelength STD: " << sqrt(processor.periodVariance()) / double(SAMPLERATE) << std::endl;
       /*
          std::cerr << "Best significance so far: " << periodFinder.bestPeriod() << " (" << Scalar(SAMPLERATE) / periodFinder.bestPeriod() << " Hz " << periodFinder.bestSignificance()*100 << " %)" << std::endl;
@@ -3114,6 +3445,7 @@ int main(int argc, char const * const * argv)
         std::cout << std::endl;
       }
       data.tune(curFreq_it->freq);
+      processor.write();
     }
   }
   /*

@@ -16,7 +16,9 @@ enum StatsStatistic
 {
   STATS_MEAN,
   STATS_VARIANCE,
-  STATS_STANDARD_DEVIATION
+  STATS_STANDARD_DEVIATION,
+  STATS_SKEWNESS,
+  STATS_KURTOSIS
 };
 
 using Eigen::numext::sqrt;
@@ -42,6 +44,9 @@ public:
   Scalar standardDeviation() { return sqrt(variance()); }
   Scalar standardDeviation() const { return sqrt(variance()); }
 
+  Scalar kurtosis() { return derived().kurtosis(); }
+  Scalar kurtosis() const { return derived().kurtosis(); }
+
   template <StatsStatistic STATISTIC>
   Scalar get() const
   {
@@ -50,7 +55,8 @@ public:
     case STATS_MEAN: return mean();
     case STATS_VARIANCE: return variance();
     case STATS_STANDARD_DEVIATION: return standardDeviation();
-    default: throw std::logic_error("invalid statistic");
+    case STATS_KURTOSIS: return kurtosis();
+    default: throw std::logic_error("invalid or unimplemented statistic");
     }
   }
 
@@ -70,19 +76,22 @@ public:
 
   Scalar const & mean() const { return _mean; }
   Scalar const & variance() const { return _variance; }
+  Scalar const & kurtosis() const { return _kurtosis; }
 
 protected:
-  StatsDistributionByMeasures(T mean, T variance)
+  StatsDistributionByMeasures(T mean, T variance, T kurtosis = 0)
   : _mean(mean),
-    _variance(variance)
+    _variance(variance),
+    _kurtosis(kurtosis)
   { }
 
   StatsDistributionByMeasures(StatsDistributionByMeasures const &) = default;
 
-  void setMeasures(Scalar mean, Scalar variance)
+  void setMeasures(Scalar mean, Scalar variance, Scalar kurtosis = 0)
   {
     setMean(mean);
     setVariance(variance);
+    setKurtosis(kurtosis);
   }
 
   void setMean(Scalar mean)
@@ -93,6 +102,14 @@ protected:
   void setVariance(Scalar variance)
   {
     _variance = variance;
+  }
+
+  void setKurtosis(Scalar kurtosis)
+  {
+    if (!this->assumeNormal())
+    {
+      _kurtosis = kurtosis;
+    }
   }
 
   Scalar deviationSignificance(Scalar value)
@@ -113,6 +130,7 @@ protected:
 private:
   Scalar _mean;
   Scalar _variance;
+  Scalar _kurtosis;
 };
 
 template <typename T, typename Derived, StatsOptions OPTIONS>
@@ -121,10 +139,17 @@ class StatsDistributionBySums : public StatsDistributionByMeasures<T, Derived, O
 public:
   using Scalar = T;
 
+  using StatsDistributionByMeasures<T, Derived, OPTIONS>::mean;
+
   size_t size() const { return _count; }
 
   Scalar sum1() const { return _sum1; }
   Scalar sum2() const { return _sum2; }
+  Scalar sum3() const
+  {
+    if (this->assumeNormal()) throw std::logic_error("not tracking 3rd moment");
+    return _sum3;
+  }
   Scalar sum4() const
   {
     if (this->assumeNormal()) throw std::logic_error("not tracking 4th moment");
@@ -133,7 +158,16 @@ public:
 
   Scalar moment1() const { return sum1() / size(); }
   Scalar moment2() const { return sum2() / size(); }
+  Scalar moment3() const { return sum3() / size(); }
   Scalar moment4() const { return sum4() / size(); }
+
+  Scalar sum2AboutMean() const { return sum2() - sum1() * mean(); }
+  Scalar sum3AboutMean() const { return sum3() + (-3 * sum2() + 2 * sum1() * mean()) * mean(); }
+  Scalar sum4AboutMean() const { return sum4() + (-4 * sum3() + (6 * sum2() + -3 * sum1() * mean()) * mean()) * mean(); }
+
+  Scalar moment2AboutMean() const { return sum2() / size(); }
+  Scalar moment3AboutMean() const { return sum3() / size(); }
+  Scalar moment4AboutMean() const { return sum4() / size(); }
 
   // For data which has had its absoute value taken before the statistics were taken,
   // if that data had a zero mean,
@@ -151,6 +185,7 @@ protected:
     _count(0),
     _sum1(0),
     _sum2(0),
+    _sum3(0),
     _sum4(0)
   { }
 
@@ -158,23 +193,28 @@ protected:
   : _count(count),
     _sum1(sum1),
     _sum2(sum2),
+    _sum3(sum3),
     _sum4(sum4)
   { }
 
   StatsDistributionBySums(StatsDistributionBySums const &) = default;
 
-  void addSums(size_t count, Scalar sum1/*sum[x]*/, Scalar sum2/*sum[x^2]*/, Scalar sum4/*sum[x^4]*/ = 0)
+  void addSums(size_t count, Scalar sum1/*sum[x]*/, Scalar sum2/*sum[x^2]*/, Scalar sum3 = 0, Scalar sum4/*sum[x^4]*/ = 0)
   {
-    setSums(_count + count, _sum1 + sum1, _sum2 + sum2, _sum4 + sum4);
+    setSums(_count + count, _sum1 + sum1, _sum2 + sum2, _sum3 + sum3, _sum4 + sum4);
   }
 
-  void setSums(size_t count, Scalar sum1/*sum[x]*/, Scalar sum2/*sum[x^2]*/, Scalar sum4/*sum[x^4]*/ = 0)
+  void setSums(size_t count, Scalar sum1/*sum[x]*/, Scalar sum2/*sum[x^2]*/, Scalar sum3 = 0, Scalar sum4/*sum[x^4]*/ = 0)
   {
     _count = count;
     _sum1 = sum1;
     _sum2 = sum2;
-    if (!this->assumeNormal()) _sum4 = sum4;
-
+    _sum3 = sum3;
+    if (!this->assumeNormal())
+    {
+      _sum3 = sum3;
+      _sum4 = sum4;
+    }
     /*
      * variance = sum(delta * delta) / (n - 1)
      * delta[i] = data[i] - mean
@@ -190,13 +230,18 @@ protected:
 
     this->setMean(this->sum1() / size());
     this->setVariance((this->sum2() - this->sum1() * this->mean()) / (size() - (this->isSample() ? 1 : 0)));
+    if (!this->assumeNormal())
+    {
+      this->setKurtosis(this->moment4AboutMean() / (this->variance() * this->variance()));
+    }
   }
 
 private:
   size_t _count;
   Scalar _sum1; // sum[x]
   Scalar _sum2; // sum[x^2]
-  Scalar _sum4; // sum[x^4], only used if not assuming normal?
+  Scalar _sum3; // sum[x^3], only used if not assuming normal
+  Scalar _sum4; // sum[x^4], only used if not assuming normal
 };
 
 //template <typename T, StatsStatistic STATISTIC, StatsOptions OPTIONS = STATS_INFINITE | STATS_ASSUME_NORMAL>
@@ -238,20 +283,10 @@ private:
   template <typename Derived, StatsOptions OPTIONS2>
   static Scalar getMean(StatsDistribution<Scalar,Derived,OPTIONS2> const & sampled, size_t sampleSize)
   {
-    switch (STATISTIC)
-    {
-    case STATS_STANDARD_DEVIATION:
-    case STATS_VARIANCE:
-      // TODO: inaccurate?
-    case STATS_MEAN:
-      return sampled.template get<STATISTIC>();
-    default:
-      throw std::logic_error("unimplemented");
-    }
+    return sampled.template get<STATISTIC>();
   }
 
   template <typename Distribution>
-  [[deprecated("still needlessly assuming non-normal distributions are normal")]]
   static Scalar getVariance(Distribution const & sampled, size_t sampleSize)
   {
     switch (STATISTIC)
@@ -259,23 +294,21 @@ private:
     case STATS_MEAN:
       return sampled.variance() / sampleSize;
     case STATS_VARIANCE:
+      // https://en.wikipedia.org/wiki/Variance#Distribution_of_the_sample_variance
       if (sampled.assumeNormal())
       {
-        // distribution is chi-square with n-1 degrees of freedom
-        // chi^2 = (n-1)s^2 / sigma^2 where sigma^2 is pop variance, and s^2 is sample variance
-        // variance is 2 * degrees of freeedom = 2 * (n - 1)
-        //
-        // s^2 = chi^2 * sigma^2 / (n-1)
-        // variance of s^2 = 2 * (n - 1) * sigma^2 / (n - 1)
-        //                 = 2 * sigma^2
-        //
-        // TODO: use an actual chi-squared distribution
-        return 2 * sampled.variance();
+        // distribution would be chi-square with n-1 degrees of freedom?
+        // TODO: use an actual chi-squared distribution?
+        auto ss = sampled.variance();
+        return 2 * ss * ss / (sampleSize - 1);
       }
       else
       {
-        throw std::logic_error("unimplemented");
+        auto ss = sampled.variance();
+        assert((sampled.kurtosis() - 1) + 2.0 / (sampleSize - 1) == sampled.derived().moment4AboutMean() - (sampleSize - 3.0) / (sampleSize - 1.0));
+        return (sampled.kurtosis() - 1 + 2.0 / (sampleSize - 1)) * ss * ss / sampleSize;
       }
+    /*
     case STATS_STANDARD_DEVIATION:
       if (sampled.assumeNormal())
       {
@@ -298,6 +331,7 @@ private:
         // TODO: REMOVE THIS LINE AND THE DEPRECATION ATTRIBUTE
         return sampled.variance() / (2 * sampleSize);
       }
+    */
     default:
       throw std::logic_error("unimplemented");
     }
@@ -323,9 +357,23 @@ public:
     binStart(Eigen::numext::floor(initial * binDensity))
   { }
 
+  StatsAccumulatorHistogram(std::istream & f)
+  {
+    uint64_t count;
+    f.read((char*)&count, sizeof(count));
+    f.read((char*)&binWidth, sizeof(binWidth));
+    f.read((char*)&binDensity, sizeof(binDensity));
+    f.read((char*)&binStart, sizeof(binStart));
+    growToEnd(count);
+    for (size_t i = 0; i < count; ++ i)
+    {
+      f.read((char*)&bins[i], sizeof(bins[i]));
+    }
+  }
+
   StatsAccumulatorHistogram(StatsAccumulatorHistogram const &) = default;
 
-  [[deprecated("learn statistics and improve library")]]
+  //[[deprecated("learn statistics and improve library")]]
   StatsAccumulatorHistogram<T, (OPTIONS & ~(STATS_SAMPLE)) | STATS_INFINITE> const &
   fakeInfinitePopulation() const
   {
@@ -337,6 +385,19 @@ public:
     this->setSums(0, 0, 0);
     for (size_t i = 0; i < bins.size(); ++ i)
       bins[i] = 0;
+  }
+
+  void write(std::ostream & f)
+  {
+    uint64_t count = bins.size();
+    f.write((char*)&count, sizeof(count));
+    f.write((char*)&binWidth, sizeof(binWidth));
+    f.write((char*)&binDensity, sizeof(binDensity));
+    f.write((char*)&binStart, sizeof(binStart));
+    for (size_t i = 0; i < count; ++ i)
+    {
+      f.write((char*)&bins[i], sizeof(bins[i]));
+    }
   }
 
   HeapVector<T> const & histogram(T & start, T & width)
