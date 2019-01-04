@@ -1,0 +1,26 @@
+- I have problems sticking with one approach.  Provide to make it easy to change approaches.
+- Provide an easy-to-include cmake module.  Make an example buildscript if concerned about ease of use.
+- Wrap armidillo as an exmple linear-algebra implementation
+
+Current goal: block class with work function
+- [X] make work function that takes vector of inputbuffers
+- [X] call work function from block implementation
+- [ ] compile and run a simple example block
+- [/] change implementations to all be classes within an implementation class
+        -> makes it easy for client code to switch implementations by changing a using declaration or template arg
+    -> mostly done, just some cleanup, likely only deletion of old things
+
+NEXT: - [ ] virtual class for block registration, registering a block will iterate through all the implementations?
+
+
+CONCERNS:
+- templates make it harder to work with things at runtime
+    - anything in particular concern is around here?
+    - templates make code faster but larger, and provide for compile-time typechecking
+
+
+POTHOS
+  - Pothos::init() and Pothos::deinit() initialize framework
+    Pothos::ScopedInit can be used to do this with RAII
+    a topology can be made via a static factory in Pothos::Topology
+    and will run when ->commit()'d
