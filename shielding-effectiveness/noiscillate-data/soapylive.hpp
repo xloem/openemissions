@@ -21,7 +21,9 @@ public:
     _device->setSampleRate(SOAPY_SDR_RX, 0, sampleRate);
     _device->setGain(SOAPY_SDR_RX, 0, dB);
 
-    // TODO: hardcoded to CS8, but generic code should go in e.g. emap
+    // TODO: hardcoded to CS8, but generic code should go in e.g. emap or freesdr
+    std::cerr << "WARNING: hardcoded to 8 bits for RTL-SDR." << std::endl;
+    std::cerr << "         precision will be lost from better radios." << std::endl;
     _stream = _device->setupStream(SOAPY_SDR_RX, "CS8", {0}, {{"bufflen", "1024000"}});
 
     if (_device->activateStream(_stream) != 0)
@@ -78,7 +80,9 @@ public:
     _sampleTime += vec.size();
   }
 
-  static constexpr Scalar epsilon() { return 1 / 127.5; }
+  static constexpr Scalar epsilon() {
+    return 1 / 127.5;
+  }
 
   ~SoapyLive()
   {

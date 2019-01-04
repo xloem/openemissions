@@ -13,11 +13,12 @@ int main(int argc, char const * const * argv)
 
   {
     HeapVector<Complex> buffer(2048000 / 2);
+    RecBufMeta meta;
     std::ifstream stream(argv[1]);
     RtlSdrIQDump data(stream);
     while (true)
     {
-      data.readMany(buffer);
+      data.readMany(buffer, meta);
       if (!buffer.size()) break;
       auto processed = buffer.real().eval();
       overall.add(processed);
@@ -25,12 +26,13 @@ int main(int argc, char const * const * argv)
   }
 
   HeapVector<Complex> buffer(2048000 / 40 / 32);
+  RecBufMeta meta;
   std::ifstream stream(argv[1]);
   RtlSdrIQDump data(stream);
   auto overallSTD = overall.standardDeviation();
   while (true)
   {
-    data.readMany(buffer);
+    data.readMany(buffer, meta);
 
     if (! buffer.size()) break;
 

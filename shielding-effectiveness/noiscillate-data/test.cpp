@@ -19,12 +19,13 @@
 
 /****
  * https://learnemc.com/shielding-theory
- * Indicates the needed SE to prevent detectable signals completely is 240 dB.
- *      (this is followed by a flawed statement that 100 dB is significant, rooted in the assumption that the emitter and receiver share the same dynamic range)
+ * Indicates the needed SE to prevent detectable signals completely is ==> 240 dB. <==
+ *      (this is followed by a flawed statement that 100 dB is sufficient, rooted in the assumption that the emitter and receiver share the same dynamic range)
  ***/
 
 /***
  * The parameter used for Shielding Effectiveness is 20 log |E|, where |E| is the magnitude of the field strength.
+ *  -> the SE is the decrease of this parameter provided by the shielded enclosure
  **/
 
 
@@ -35,20 +36,22 @@
 // - [ ] compare variance of deconvolution result to sum of original variances?
 //        -> for error tracking, want resulting error to be accurate
 //        -> we'll likely want to use the result that is consistently larger for large sample sizes
-// - [ ] move recording code from test.cpp to 1-1-prof-env.cpp
+// - [X] move recording code from test.cpp to 1-1-prof-env.cpp
 //          -> 1-1-prof-env will make a hist for an environment
 //          -> it will require the environment number and the emitter setup numbers that are active
 //          -> it will show a chart of variance + error during recording
 //              (variance appears to be the correct stats SE metric, see below)
-//    - [ ] user passes environment number, emitter numbers, soapy args, and filename
-//    - [ ] add string list to hist format for source data (soapy args perhaps)
+//    - [X] user passes environment number, emitter numbers, soapy args, and filename
+//    - [X] add string list to hist format for source data (soapy args perhaps)
 //            string 0: source type
 //            strings: source resources
-//    - [ ] add environment numbers and emitter numbers to hist format
-//       - [ ] use version field
-//       - [ ] convert old hists
-//       - [ ] ensure begin and end timestamps are included
-//    - [ ] show a chart of variance + error during recording
+//    - [X] add environment numbers and emitter numbers to hist format
+//       - [X] use version field
+//       - [X] convert old hists
+//       - [X] ensure begin and end timestamps are included
+//    - [X] show a chart of variance + error during recording
+//    - [ ] catch termination and write before close
+//    - [ ] test script, both for new data and updating
 // - [ ] make 1-2-gen-diff-hist.cpp
 //          -> combines two environment hists and produces emitter hist of changed emitter
 //    - [ ] user passes 2 filenames, and output filename
@@ -228,97 +231,7 @@
 // confidence interval or such.  The % confidence I want should be related to the number of trials I want to require before a msitake is found.  I've been doing a year of runs, which involves dividing the time
 // in a year by the time of the trial.
                    
-
-template <typename Scalar, class DataSource, class DataProcessor>
-class DataFeeder
-{
-public:
-  DataFeeder(DataSource & source,
-             DataProcessor & processor,
-             std::function<bool()> checkDataInterruptedHook = [](){return false;})
-  : _source(source),
-    _processor(processor),
-    _checkInterruptedHook(checkDataInterruptedHook)
-  {
-    _lastMeta.sampleTime = 0;
-    _lastMeta.freq = -1;
-    _lastMeta.rate = -1;
-  }
-
-  template <typename Derived>
-  void add(Eigen::PlainObjectBase<Derived> const & chunk, RecBufMeta const & meta)
-  {
-    using Eigen::numext::mini;
-
-    size_t minNeeded = _processor.bufferSizeMin();
-    size_t multipleNeeded = _processor.bufferSizeMultiple();
-    size_t maxNeeded = _processor.bufferSizeMax();
-
-    size_t chunkOffset = 0;
-    size_t nextSize;
-    
-    // exhaust buffer
-    if (_lastMeta.sampleTime + _buffer.size() != meta.sampleTime ||
-        _lastMeta.freq != meta.freq ||
-        _lastMeta.rate != meta.rate)
-    {
-      // buffer doesn't contain enough samples, and next chunk is not contiguous with it
-      // drop it
-      _buffer.conservativeResize(0);
-      _lastMeta = meta;
-    }
-    if (_buffer.size())
-    {
-      nextSize = mini((size_t)_buffer.size() + (size_t)chunk.size(), maxNeeded);
-      if (multipleNeeded > 1)
-      {
-        nextSize -= nextSize % multipleNeeded;
-      }
-      if (nextSize < minNeeded)
-      {
-        _buffer.conservativeResize(_buffer.size() + chunk.size());
-        _buffer.tail(chunk.size()) = chunk;
-        return;
-      }
-      size_t chunkOffset = nextSize - _buffer.size();
-      _buffer.conservativeResize(nextSize);
-      _buffer.tail(chunkOffset) = chunk.head(chunkOffset);
-      _processor.process(*this, _buffer, _lastMeta);
-      _lastMeta.sampleTime += _buffer.size();
-    }
-
-    // pass segments of chunk
-    while (!checkInterrupted())
-    {
-      minNeeded = _processor.bufferSizeMin();
-      multipleNeeded = _processor.bufferSizeMultiple();
-      maxNeeded = _processor.bufferSizeMax();
-      nextSize = mini(chunk.size() - chunkOffset, maxNeeded);
-      if (multipleNeeded > 1)
-      {
-        nextSize -= nextSize % multipleNeeded;
-      }
-      if (nextSize < minNeeded)
-      {
-        break;
-      }
-
-      _processor.process(*this, chunk.segment(chunkOffset, nextSize), _lastMeta);
-      _lastMeta.sampleTime += nextSize;
-      chunkOffset += nextSize;
-    }
-
-    nextSize = chunk.size() - chunkOffset;
-    assert(_lastMeta.sampleTime == meta.sampleTime + chunk.size() - nextSize);
-    _buffer.conservativeResize(nextSize);
-    _buffer = chunk.tail(nextSize);
-  }
-
-  bool checkInterrupted() { return _checkInterruptedHook(); }
-
-  DataSource & source() { return _source; }
-
-  DataProcessor & processor() { return _processor; }
+#include "datafeeder.hpp"
 
   // Harmonics
   //
@@ -412,14 +325,6 @@ public:
   // but what will happen is that r will change randomly, whereas c will not.
   //
   // so it's looking to me like if I sum the square of the value instead of the magnitude, the result will = the mean of r^2 (which I think is the variance) plus the signal^2
-
-private:
-  DataSource & _source;
-  DataProcessor & _processor;
-  HeapVector<Scalar> _buffer;
-  std::function<bool()> _checkInterruptedHook;
-  RecBufMeta _lastMeta;
-};
 
 /*
 template <typename T>
@@ -2970,104 +2875,7 @@ private:
   WaveformModel _calibration;
 };
 
-template <typename _Scalar, typename _StatsAccumulator, StatsStatistic STATISTIC = STATS_MEAN>
-class ProcessorNoiseProfile
-{
-public:
-  using StatsAccumulator = _StatsAccumulator;
-  using Scalar = _Scalar;
-
-  ProcessorNoiseProfile(std::string fname, StatsAccumulator const & initial)
-  : _initial(initial),
-    _totalSamps(0),
-    _fname(fname)
-  {
-    std::ifstream f(fname);
-    f.ignore(1);
-    if (f.good())
-    {
-      f.seekg(0, std::ios_base::beg);
-      uint64_t count;
-      f.read((char*)&count, sizeof(count));
-      for (uint64_t i = 0; i < count; ++ i)
-      {
-        Scalar freq;
-        f.read((char*)&freq, sizeof(freq));
-        _binsByFrequency.emplace(freq, f);
-      }
-    }
-  }
-
-  void write()
-  {
-    std::string tmpname = _fname + "_";
-    std::ofstream f(tmpname);
-    uint64_t count = _binsByFrequency.size();
-    f.write((char*)&count, sizeof(count));
-    for (auto & bin : _binsByFrequency)
-    {
-      Scalar freq = bin.first;
-      f.write((char*)&freq, sizeof(freq));
-      bin.second.write(f);
-    }
-    f.close();
-    std::rename(tmpname.c_str(), _fname.c_str());
-  }
-
-  size_t bufferSizeMin() const
-  {
-    return 1;
-  }
-
-  size_t bufferSizeMultiple() const
-  {
-    return 1;
-  }
-
-  size_t bufferSizeMax() const
-  {
-    return std::numeric_limits<size_t>::max();
-  }
-
-  template <class DataFeeder, class Derived>
-  void process(DataFeeder & feeder, Eigen::DenseBase<Derived> const & chunk, RecBufMeta const & meta)
-  {
-    _binsByFrequency.emplace(std::make_pair(meta.freq, _initial)).first->second.add(chunk);
-    _totalSamps += chunk.size();
-  }
-
-  uint64_t periodsConsidered() const
-  {
-    return _totalSamps;
-  }
-
-  Scalar bestPeriod() const
-  {
-    return 1;
-  }
-
-  Scalar bestFrequency() const
-  {
-    return 1;
-  }
-
-  Scalar bestMag(Scalar & freq)
-  {
-    return _binsByFrequency.at(freq).template get<STATISTIC>();
-  }
-
-  Scalar bestMagVariance(Scalar & freq)
-  {
-    auto & bin = _binsByFrequency.at(freq);
-    return StatsDistributionSampling<Scalar, STATISTIC>(bin.fakeInfinitePopulation(), bin.size()).variance();
-  }
-
-private:
-  StatsAccumulator _initial;
-  std::map<Scalar, StatsAccumulator> _binsByFrequency;
-  uint64_t _totalSamps;
-  std::string _fname;
-};
+#include "processornoiseprofile.hpp"
 
 #if 0
 struct FileRef

@@ -7,11 +7,12 @@
 int main()
 {
   HeapVector<Complex> buffer(2048000 / 2);
+  RecBufMeta meta;
   RtlSdrIQDump data(std::cin);
 
   while (true)
   {
-    data.readMany(buffer);
+    data.readMany(buffer, meta);
     if (!buffer.size()) break;
     auto processed = buffer.real().array().abs();
     StatsAccumulatorHistogram<Scalar> stats(RtlSdrIQDump::epsilon());

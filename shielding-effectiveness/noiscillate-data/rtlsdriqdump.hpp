@@ -8,12 +8,13 @@ class RtlSdrIQDump
 public:
   RtlSdrIQDump(std::istream & stream)
   : _stream(stream),
-    _sampleTime(0)
+    _sampleTime(0),
+    _freq(0)
   { }
 
   Scalar tune(Scalar freq)
   {
-    return 0;
+    return _freq = freq;
   }
   
   template <typename Derived>
@@ -28,7 +29,7 @@ public:
     vec.real() = eigenScalarData.row(0);
     vec.imag() = eigenScalarData.row(1);
     meta.rate = 0;
-    meta.freq = 0;
+    meta.freq = _freq;
     meta.sampleTime = _sampleTime;
     _sampleTime += eigenScalarData.cols();
   }
@@ -38,6 +39,7 @@ public:
 private:
   std::istream & _stream;
   uint64_t _sampleTime;
+  Scalar _freq;
 };
 
 // TODO NEXT: make a generic class for reading and writing raw data files, I guess
