@@ -22,7 +22,7 @@ public:
   }
 
   template <typename Derived>
-  void add(Eigen::PlainObjectBase<Derived> const & chunk, RecBufMeta const & meta)
+  void add(Eigen::EigenBase<Derived> const & chunk, RecBufMeta const & meta)
   {
     using Eigen::numext::mini;
 
@@ -58,7 +58,7 @@ public:
       }
       size_t chunkOffset = nextSize - _buffer.size();
       _buffer.conservativeResize(nextSize);
-      _buffer.tail(chunkOffset) = chunk.head(chunkOffset);
+      _buffer.tail(chunkOffset) = chunk.derived().head(chunkOffset);
       _processor.process(*this, _buffer, _lastMeta);
       _lastMeta.sampleTime += _buffer.size();
     }
@@ -79,7 +79,7 @@ public:
         break;
       }
 
-      _processor.process(*this, chunk.segment(chunkOffset, nextSize), _lastMeta);
+      _processor.process(*this, chunk.derived().segment(chunkOffset, nextSize), _lastMeta);
       _lastMeta.sampleTime += nextSize;
       chunkOffset += nextSize;
     }
@@ -87,7 +87,7 @@ public:
     nextSize = chunk.size() - chunkOffset;
     assert(_lastMeta.sampleTime == meta.sampleTime + chunk.size() - nextSize);
     _buffer.conservativeResize(nextSize);
-    _buffer = chunk.tail(nextSize);
+    _buffer = chunk.derived().tail(nextSize);
   }
 
   bool checkInterrupted() { return _checkInterruptedHook(); }

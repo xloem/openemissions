@@ -16,6 +16,11 @@ template <typename Type, size_t maxsize, size_t count, int options = 0>
 using StackVectors = Eigen::Matrix<Type, Eigen::Dynamic, count, options, maxsize>;
 template <typename Type, size_t maxsize, int options = 0>
 using StackVector = StackVectors<Type, maxsize, 1, options>;
+template <typename Type, size_t size, size_t count, int options = 0>
+using FixedVectors = Eigen::Matrix<Type, size, count, options>;
+template <typename Type, size_t size, int options = 0>
+using FixedVector = FixedVectors<Type, size, 1, options>;
+
 
 // allow casting of all complex types in eigen
 // TODO: submit patch to eigen? alternatively make specializations of std::complex?

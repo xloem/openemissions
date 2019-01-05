@@ -43,23 +43,50 @@
 //              (variance appears to be the correct stats SE metric, see below)
 //    - [X] user passes environment number, emitter numbers, soapy args, and filename
 //    - [X] add string list to hist format for source data (soapy args perhaps)
-//            string 0: source type
-//            strings: source resources
 //    - [X] add environment numbers and emitter numbers to hist format
 //       - [X] use version field
 //       - [X] convert old hists
 //       - [X] ensure begin and end timestamps are included
 //    - [X] show a chart of variance + error during recording
-//    - [ ] catch termination and write before close
-//    - [ ] test script, both for new data and updating
+//    - [X] catch termination and write before close
+//    - [X] test script, both for new data and updating
+//    - [ ] fix bugs:
+//        - [X] Y errors are all NaN
+//        - [X] does not save when window is closed
+//        - [X] does not save on ctrl-c
+//        - [X] data from old file is not loaded
+//        - [X] if window is dragged during draw, new window is created
+//        - [/] does not handle stream errors from device?
+//          -> at this point soapy usually times out; i got a segfault once but it didn't happen again =/
+//             soapy doesn't appear to provide more info
+//        - [X] getting smaller error when fewer points are taken?
+//        - [X] loaded variance differs from stored variance
+//        - [X] file is not written if soapysdr throws
+//        - [X] graph has many lines extending upward when first developed
+//        - [X] chart may be given wrong range such that data is off bottom
+//        - [ ] no feedback that recording is happening
+//            -> also good to know if new sweeps are warranted
+//        - [ ] test settle time to ensure is large enough (also can speed rec by making smaller)
+//            - [ ] provide option for number of sweeps, and option for settle time
+//            - [ ] output variance and mean of error at end
+//            - [ ] test different settle time results with 1 sweep
 // - [ ] make 1-2-gen-diff-hist.cpp
 //          -> combines two environment hists and produces emitter hist of changed emitter
 //    - [ ] user passes 2 filenames, and output filename
 //    - [ ] enforce that only 1 emitter changed between hists
 //    - [ ] enforce that both hists are same environment
 //    - [ ] enforce that both hists used same recording setup?
-//    - [ ] use deconvolution to produce second hist
 //    - [ ] output filenames of inputs in source list of file
+//    - [ ] use deconvolution to produce second hist
+//    - [ ] note whether freq shifted peaks are a problem:
+//            - [ ] if they are, test ppm before and after recording to see if ppm change is the issue
+//            - could shift recordings or chunks of them to unshift peaks
+//            - could track ppm during recording
+//            - could keep freq low to decrease overheat
+//            - could track dist rec times in file to inform shifting later
+//                (shifting would change over recording time rather than freq)
+//            - could recheck spots with significant change from a neighbor before/after sweeps
+//            - could sort bins by unrecorded-or-high-change-from-a-neighbor when sweeping <==
 // - [ ] make 1-3-plot-se.cpp
 //          -> combines two emitter hists and plots shielding effectiveness with error
 //    - [ ] enforce that emitter hists are both emitter hists

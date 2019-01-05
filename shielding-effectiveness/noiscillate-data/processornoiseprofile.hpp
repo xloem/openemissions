@@ -41,7 +41,7 @@ public:
       case 1:
         {
           f.read((char*)&_env, sizeof(_env));
-          if (env != INVALIDINT64 && _env != env) throw std::invalid_argument("Environment number mismatch in file.");
+          if (env != INVALIDINT64 && _env != env) throw std::invalid_argument(std::string("File is for environment #") + std::to_string(_env));
           uint64_t emitterCount;
           f.read((char*)&emitterCount, sizeof(emitterCount));
           _emits.resize(emitterCount);
@@ -63,11 +63,18 @@ public:
             std::string desc;
             desc.resize(len);
             f.read(&desc[0], len);
-            if (it == _srcDescs.end() || desc != *it)
+            if (it == _srcDescs.end())
             {
               it = _srcDescs.insert(it, std::move(desc));
             }
-            ++ it;
+            else if (desc != *it)
+            {
+              throw std::invalid_argument("File source description contains differing '" + desc + "'");
+            }
+            else
+            {
+              ++ it;
+            }
           }
         }
         break;
@@ -140,7 +147,7 @@ public:
   template <class DataFeeder, class Derived>
   void process(DataFeeder & feeder, Eigen::DenseBase<Derived> const & chunk, RecBufMeta const & meta)
   {
-    _binsByFrequency.emplace(std::make_pair(meta.freq, _initial)).first->second.add(chunk);
+    _binsByFrequency.emplace(meta.freq, _initial).first->second.add(chunk);
     _totalSamps += chunk.size();
   }
 
@@ -161,13 +168,17 @@ public:
 
   Scalar bestMag(Scalar & freq)
   {
-    return _binsByFrequency.at(freq).template get<STATISTIC>();
+    auto ret = _binsByFrequency.at(freq).template get<STATISTIC>();
+    //std::cerr << freq << " -> " << std::scientific << ret << std::fixed << std::endl;
+    return ret;
   }
 
   Scalar bestMagVariance(Scalar & freq)
   {
     auto & bin = _binsByFrequency.at(freq);
-    return StatsDistributionSampling<Scalar, STATISTIC>(bin.fakeInfinitePopulation(), bin.size()).variance();
+    auto ret = StatsDistributionSampling<Scalar, STATISTIC>(bin.fakeInfinitePopulation(), bin.size()).variance();
+    //std::cerr << freq << " x " << bin.size() << " -> " << std::scientific << ret << std::fixed << std::endl;
+    return ret;
   }
 
   time_t startTime() const { return _startTime; }

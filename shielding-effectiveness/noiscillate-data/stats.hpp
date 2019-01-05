@@ -211,7 +211,6 @@ protected:
     _count = count;
     _sum1 = sum1;
     _sum2 = sum2;
-    _sum3 = sum3;
     if (!this->assumeNormal())
     {
       _sum3 = sum3;
@@ -307,7 +306,6 @@ private:
       else
       {
         auto ss = sampled.variance();
-        assert((sampled.kurtosis() - 1) + 2.0 / (sampleSize - 1) == sampled.derived().moment4AboutMean() - (sampleSize - 3.0) / (sampleSize - 1.0));
         return (sampled.kurtosis() - 1 + 2.0 / (sampleSize - 1)) * ss * ss / sampleSize;
       }
     /*
@@ -356,7 +354,7 @@ public:
   StatsAccumulatorHistogram(Scalar binWidth, Scalar initial = 0)
   : binWidth(binWidth),
     binDensity(1.0 / binWidth),
-    binStart(Eigen::numext::floor(initial * binDensity))
+    binStart(initial * binDensity)
   { }
 
   StatsAccumulatorHistogram(std::istream & f)
@@ -367,10 +365,16 @@ public:
     f.read((char*)&binDensity, sizeof(binDensity));
     f.read((char*)&binStart, sizeof(binStart));
     growToEnd(count);
+    T size = 0;
     for (size_t i = 0; i < count; ++ i)
     {
-      f.read((char*)&bins[i], sizeof(bins[i]));
+      auto & bin = bins[i];
+      f.read((char*)&bin, sizeof(bin));
+      size += bin;
     }
+    generateSumCoeffs();
+    updateSums(size + 0.5);
+    updateExtents();
   }
 
   StatsAccumulatorHistogram(StatsAccumulatorHistogram const &) = default;
@@ -384,7 +388,7 @@ public:
 
   void clear()
   {
-    this->setSums(0, 0, 0);
+    this->setSums(0, 0, 0, 0);
     for (size_t i = 0; i < bins.size(); ++ i)
       bins[i] = 0;
   }
@@ -396,15 +400,17 @@ public:
     f.write((char*)&binWidth, sizeof(binWidth));
     f.write((char*)&binDensity, sizeof(binDensity));
     f.write((char*)&binStart, sizeof(binStart));
+    T sum = 0;
     for (size_t i = 0; i < count; ++ i)
     {
+      sum += bins[i];
       f.write((char*)&bins[i], sizeof(bins[i]));
     }
   }
 
   HeapVector<T> const & histogram(T & start, T & width)
   {
-    start = binStart * binWidth;
+    start = binToUser(0);
     width = binWidth;
     return bins;
   }
@@ -429,7 +435,7 @@ public:
     growToEnd(maxIdx + 1);
     stretchNonzero(minIdx, maxIdx);
 
-    this->addSums(chunk.size() * repeat, chunk.sum() * repeat, chunk.derived().matrix().squaredNorm() * repeat, (chunk.derived().array().abs2() * chunk.derived().array().abs2()).sum() * repeat);
+    this->addSums(chunk.size() * repeat, chunk.sum() * repeat, chunk.derived().matrix().squaredNorm() * repeat, (chunk.derived().array().abs2() * chunk.derived().array()).sum() * repeat, (chunk.derived().array().abs2() * chunk.derived().array().abs2()).sum() * repeat);
 
     bins[chunkScaled.redux([this, repeat](T lastIdx, T nextIdx) -> T {
       bins[lastIdx] += repeat;
@@ -447,14 +453,15 @@ public:
     }
     growBoth<OPTIONS>(group);
     stretchNonzero(group.minNonzero, group.maxNonzero);
-    this->addSums(group.size(), group.sum1(), group.sum2(), group.sum4());
+    this->addSums(group.size(), group.sum1(), group.sum2(), group.sum3(), group.sum4());
     bins += group.bins;
     assert(this->size() == bins.sum());
+    updateExtents();
   }
 
   void remove(StatsAccumulatorHistogram<T,OPTIONS> & subgroup)
   {
-    this->setSums(this->size() - subgroup.size(), this->sum1() - subgroup.sum1(), this->sum2() - subgroup.sum2(), this->sum4() - subgroup.sum4());
+    this->setSums(this->size() - subgroup.size(), this->sum1() - subgroup.sum1(), this->sum2() - subgroup.sum2(), this->sum3() - subgroup.sum3(), this->sum4() - subgroup.sum4());
     growBoth(subgroup);
     bins = (bins - subgroup.bins).round();
     assert(this->size() == bins.sum());
@@ -462,14 +469,7 @@ public:
     {
       return;
     }
-    while (bins[minNonzero] == 0)
-    {
-      ++ minNonzero;
-    }
-    while (bins[maxNonzero] == 0)
-    {
-      -- maxNonzero;
-    }
+    updateExtents();
   }
 
   // Assuming this distribution is made by summing data with another distribution,
@@ -516,7 +516,7 @@ public:
     }
     if (smallestIdx < 0)
     {
-      growByStart(-smallestIdx);
+      growByStart(-smallestIdx + 0.5);
       smallestIdx = 0;
     }
     // the largest item in ret could be the largest item in this minus the smallest item in comp
@@ -529,7 +529,7 @@ public:
     }
     if (largestIdx >= bins.size())
     {
-      growToEnd(largestIdx + 1);
+      growToEnd(largestIdx + 1 + 0.5);
     }
 
     growBoth(componentDistribution);
@@ -617,6 +617,7 @@ public:
     }
     ret.sumCoeffs = sumCoeffs;
     ret.updateSums(smallCount);
+    ret.updateExtents();
     
     return ret;
   }
@@ -629,7 +630,7 @@ private:
 
   size_t minNonzero, maxNonzero;
 
-  std::shared_ptr<HeapVectors<T,3>> sumCoeffs;
+  std::shared_ptr<HeapVectors<T,4>> sumCoeffs;
 
   StatsAccumulatorHistogram(T binWidth, T binDensity, T binStart)
   : binWidth(binWidth),
@@ -709,15 +710,16 @@ private:
 
   void generateSumCoeffs()
   {
-    sumCoeffs.reset(new HeapVectors<T,3>());
-    sumCoeffs->resize(bins.size(), 3);
+    sumCoeffs.reset(new HeapVectors<T,4>());
+    sumCoeffs->resize(bins.size(), 4);
     for (size_t i = 0; i < sumCoeffs->rows(); ++ i)
     {
-      T value = (binStart + i) * binWidth;
-      for (size_t j = 0; j < 3; ++ j)
+      T baseValue = binToUser(i);
+      T raisedValue = baseValue;
+      for (size_t j = 0; j < 4; ++ j)
       {
-        (*sumCoeffs)(i, j) = value;
-        value *= value;
+        (*sumCoeffs)(i, j) = raisedValue;
+        raisedValue *= baseValue;
       }
     }
   }
@@ -725,10 +727,36 @@ private:
   void updateSums(size_t size)
   {
     // bins has n rows
-    // sumCoeffs has n rows and 3 columns
+    // sumCoeffs has n rows and 4 columns
     auto sums = (sumCoeffs->array().colwise() * bins.array()).colwise().sum().eval();
-    this->setSums(size, sums[0], sums[1], sums[2]);
+    this->setSums(size, sums[0], sums[1], sums[2], sums[3]);
   }
+
+  void updateExtents()
+  {
+    minNonzero = 0;
+    maxNonzero = bins.size() - 1;
+    while (bins[minNonzero] == 0 && minNonzero != maxNonzero)
+    {
+      ++ minNonzero;
+    }
+    while (bins[maxNonzero] == 0 && minNonzero != maxNonzero)
+    {
+      -- minNonzero;
+    }
+  }
+
+  constexpr Eigen::Index userToBin(T user)
+  {
+    using Eigen::numext::floor;
+    return floor(user * binDensity - binStart + 0.5);
+  }
+
+  constexpr T binToUser(Eigen::Index bin)
+  {
+    return (bin + binStart) * binWidth;
+  }
+
 };
 
 template <typename T, StatsOptions OPTIONS = STATS_SAMPLE | STATS_ASSUME_NORMAL>
@@ -761,7 +789,7 @@ public:
 
   void clear()
   {
-    this->setSums(0, 0, 0);
+    this->setSums(0, 0, 0, 0);
   }
 
   template <typename Derived>

@@ -7,6 +7,10 @@
 
 #include <SoapySDR/Device.hpp>
 #include <SoapySDR/Errors.hpp>
+#include <SoapySDR/Version.hpp>
+
+#include <TSystem.h>
+#include <TUUID.h>
 
 class SoapyLive
 {
@@ -24,7 +28,7 @@ public:
     // TODO: hardcoded to CS8, but generic code should go in e.g. emap or freesdr
     std::cerr << "WARNING: hardcoded to 8 bits for RTL-SDR." << std::endl;
     std::cerr << "         precision will be lost from better radios." << std::endl;
-    _stream = _device->setupStream(SOAPY_SDR_RX, "CS8", {0}, {{"bufflen", "1024000"}});
+    _stream = _device->setupStream(SOAPY_SDR_RX, "CS8", {0}/*, {{"bufflen", "1048576"}}*/);
 
     if (_device->activateStream(_stream) != 0)
     {
@@ -33,6 +37,28 @@ public:
 
     _freq = _device->getFrequency(SOAPY_SDR_RX, 0);
     _rate = _device->getSampleRate(SOAPY_SDR_RX, 0);
+    _gain = _device->getGain(SOAPY_SDR_RX, 0);
+  }
+
+  std::string ident()
+  {
+    std::string ret = "driver=" + _device->getDriverKey() + ",hardware=" + _device->getHardwareKey();
+    SoapySDR::Kwargs info = SoapySDR::Device::enumerate(_device->getHardwareInfo())[0];
+    info["driver"] = _device->getDriverKey();
+    info["hardware"] = _device->getHardwareKey();
+    SoapySDR::Kwargs extra;
+    extra["samplerate"] = std::to_string(_rate);
+    extra["gain"] = std::to_string(_gain);
+    extra["soapysdrapi"] = SoapySDR::getAPIVersion();
+    extra["soapysdrlib"] = SoapySDR::getLibVersion();
+    SysInfo_t sysinfo;
+    if (gSystem->GetSysInfo(&sysinfo) == 0)
+    {
+      extra["syscpu"] = sysinfo.fCpuType;
+      extra["sysmodel"] = sysinfo.fModel;
+      extra["sysos"] = sysinfo.fOS;
+    }
+    return SoapySDR::KwargsToString(info) + "\n" + SoapySDR::KwargsToString(extra);
   }
 
   Scalar tune(Scalar freq)
@@ -51,21 +77,36 @@ public:
   template <typename Derived>
   void readMany(Eigen::MatrixBase<Derived> const & _vec, RecBufMeta & meta)
   {
+    Eigen::MatrixBase<Derived> & vec = const_cast<Eigen::MatrixBase<Derived> &>(_vec);
     int flags;
     long long timeNs;
+
+    meta.rate = _rate;
+    meta.freq = _freq;
 
     while (_skip > 0)
     {
       _buf.resize(2 * _skip);
       void * buf = _buf.data();
-      _skip -= _device->readStream(_stream, &buf, _skip, flags, timeNs, 10000000);
+      auto result = _device->readStream(_stream, &buf, _skip, flags, timeNs, 2000000);
+      /*if (result == SOAPY_SDR_TIMEOUT)
+      {
+        std::cerr << "device timeout" << std::endl;
+        vec.derived().conservativeResize(0);
+        meta.sampleTime = _sampleTime;
+        return;
+      }
+      else */if (result < 0)
+      {
+        throw std::runtime_error(std::string("SoapySDR: ") + SoapySDR::errToStr(result));
+      }
+      _sampleTime += result;
+      _skip -= result;
     }
 
     _buf.resize(2 * _vec.size());
     void * buf = _buf.data();
 
-    meta.rate = _rate;
-    meta.freq = _freq;
     meta.sampleTime = _sampleTime;
 
     // TODO: use global cast function to skip some of this extra stuff
@@ -73,7 +114,6 @@ public:
     if (count < 0) throw std::runtime_error(std::string("stream read error: ") + SoapySDR::errToStr(count));
     Eigen::Map<Eigen::Array<int8_t, 2, Eigen::Dynamic>> eigenRawData(&_buf[0], 2, count);
     auto eigenScalarData = (eigenRawData.cast<Scalar>() + 0.5) / 127.5;
-    Eigen::MatrixBase<Derived> & vec = const_cast<Eigen::MatrixBase<Derived> &>(_vec);
     vec.derived().conservativeResize(eigenScalarData.cols());
     vec.real() = eigenScalarData.row(0);
     vec.imag() = eigenScalarData.row(1);
@@ -82,6 +122,10 @@ public:
 
   static constexpr Scalar epsilon() {
     return 1 / 127.5;
+  }
+
+  static constexpr Scalar midval() {
+    return 0.5 / 127.5;
   }
 
   ~SoapyLive()
@@ -96,6 +140,7 @@ private:
   SoapySDR::Stream * _stream;
 
   Scalar _rate;
+  Scalar _gain;
   Scalar _freq;
   uint64_t _sampleTime;
   uint64_t _skip;
