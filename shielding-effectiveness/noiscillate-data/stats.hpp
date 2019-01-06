@@ -338,6 +338,24 @@ private:
   }
 };
 
+template <typename T, StatsOptions OPTIONS = STATS_SAMPLE>
+class StatsAccumulator : public StatsDistributionBySums<T, StatsAccumulator<T, OPTIONS>, OPTIONS>
+{
+public:
+  using Scalar = T;
+
+
+  void clear()
+  {
+    this->setSums(0, 0, 0, 0);
+  }
+
+  void add(Scalar const & value, size_t repeat = 1)
+  {
+    this->addSums(repeat, value * repeat, value * value * repeat, value * value * value * repeat, value * value * value * value * repeat);
+  }
+};
+
 #include <memory>
 #define EIGEN_FFTW_DEFAULT
 #include <unsupported/Eigen/FFT>

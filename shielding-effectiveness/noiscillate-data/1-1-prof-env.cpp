@@ -30,17 +30,20 @@ public:
     _sigQuit(*this, kSigQuit),
     _sigInterrupt(*this, kSigInterrupt),
     _sigTermination(*this, kSigTermination),
+    _quiet(0),
+    _sweepCount(0),
     _minTuneFreq(200000000),
     _maxTuneFreq(1400000000),
     _sampleRate(2400000),
     _gain(43),
     _hopDistance(0),
+    _settleSecs(0.0),
     _randGen(_randDev()),
-    _terminate(false)
+    _terminate(false),
+    _sweepNum(1)
   {
     GetOptions(argc, argv);
     
-    _canvas.SetTitle("Recording Profile");
     _graph.SetTitle("Recording Profile");
     _graph.GetXaxis()->SetTitle("Frequency (Hz)");
     _graph.GetYaxis()->SetTitle("Power (dB)");
@@ -66,7 +69,7 @@ public:
     std::cerr << "Device construction args: '" << _soapyArgs << "'." << std::endl;
     std::cerr << "Recording at " << _sampleRate << " Hz in hops of " << _hopDistance << " Hz from " << _minTuneFreq << " Hz through " << _maxTuneFreq << " Hz." << std::endl;
 
-    SoapyLive data(_soapyArgs.c_str(), _gain, _sampleRate);
+    SoapyLive data(_soapyArgs.c_str(), _gain, _sampleRate, _settleSecs);
     auto ident = data.ident();
     std::cerr << "Device identification string: '" << ident << "'." << std::endl;
     ProcessorNoiseProfile<Scalar, StatsAccumulatorHistogram<Scalar>, STATS_VARIANCE> processor(_fname, {data.epsilon(), data.midval()}, _env, _emits, {"SoapySDR", ident});
@@ -78,13 +81,18 @@ public:
       obj.idx = _tuneFreqs.size();
       _tuneFreqs.push_back(obj);
     }
+    if (_quiet < 1)
+    {
+      _canvas.reset(new TCanvas());
+      _canvas->SetTitle("Recording Profile");
+    }
     _graph.Set(_tuneFreqs.size());
     for (size_t i = 0; i < _tuneFreqs.size(); ++ i)
     {
       _graph.SetPoint(i, _tuneFreqs[i].freq, 0);
       _graph.SetPointError(i, -_sampleRate / 2, _sampleRate / 2, 0, 0);
     }
-
+  
     _drawMode = "AL";
     for (auto & freq : _tuneFreqs)
     {
@@ -97,10 +105,13 @@ public:
         _drawMode = "AP";
       }
     }
-    _graph.Draw(_drawMode);
-    _graph.SetMinimum(-100);
-    _graph.Draw(_drawMode);
-    _canvas.Update();
+    if (_quiet < 1)
+    {
+      _graph.Draw(_drawMode);
+      _graph.SetMinimum(-100);
+      _graph.Draw(_drawMode);
+      _canvas->Update();
+    }
 
     try
     {
@@ -121,7 +132,12 @@ public:
       std::shuffle(_tuneFreqs.begin(), _tuneFreqs.end(), _randGen);
       auto curFreq_it = _tuneFreqs.begin();
       curFreq_it->freq = data.tune(curFreq_it->freq);
-  
+
+      _maxDelta = 0;
+      _maxError = 0;
+      _minValue = Eigen::NumTraits<Scalar>::infinity();
+      _maxValue = -_minValue;
+
       while (true)
       {
         data.readMany(buffer, bufMeta);
@@ -131,6 +147,11 @@ public:
   
         auto freq = curFreq_it->freq;
         auto freqIdx = curFreq_it->idx;
+
+        if (_quiet < 1)
+        {
+          std::cerr << /*"\r*/"Sweep #" << _sweepNum << ": " << (curFreq_it - _tuneFreqs.begin()) * 100 / (_tuneFreqs.size() - 1) << "% (last @" << freq << " Hz)   " << std::flush;
+        }
   
         ++ curFreq_it;
         if (curFreq_it == _tuneFreqs.end())
@@ -145,13 +166,13 @@ public:
         // process chart
         // TODO: use a 2D histogram? user may understand signal better
         setPoint(processor, freq, freqIdx);
-        if (gPad)
+        if (_quiet < 1 && gPad)
         {
           _graph.Draw(_drawMode);
-          _canvas.Update();
+          _canvas->Update();
         }
         gSystem->ProcessEvents();
-        if (_canvas.GetCanvasImp() == nullptr) _terminate = true;
+        if (_quiet < 1 && _canvas->GetCanvasImp() == nullptr) _terminate = true;
   
         // write file if a full sweep has completed
         if (curFreq_it == _tuneFreqs.begin() || _terminate)
@@ -160,8 +181,35 @@ public:
           processor.write();
           std::cerr << "re-";
           gSystem->ProcessEvents();
+          std::cerr << std::endl;
+          std::cerr << "Max Delta = " << _maxDelta << " dB at " << _maxDeltaFreq << " Hz" << std::endl;
+          std::cerr << "Max Error = " << _maxError << " dB at " << _maxErrorFreq << " Hz" << std::endl;
+          std::cerr << "Max Value = " << _maxValue << " dB at " << _maxValueFreq << " Hz" << std::endl;
+          std::cerr << "Min Value = " << _minValue << " dB at " << _minValueFreq << " Hz" << std::endl;
+
+          StatsAccumulator<Scalar> errorStats_v;
+          StatsAccumulator<Scalar> errorStats_dB;
+          for (auto & f : _tuneFreqs)
+          {
+            auto e = sqrt(processor.bestMagVariance(f.freq)) * 3;
+            errorStats_v.add(e);
+            e = _graph.GetEYhigh()[f.idx] - _graph.GetEYlow()[f.idx];
+            errorStats_dB.add(e);
+          }
+          std::cerr << "Error_dB Mean = " << errorStats_dB.mean() << " dB" << std::endl;
+          std::cerr << "Error_raw Mean = " << std::scientific << errorStats_v.mean() << std::fixed << std::endl;
+          std::cerr << "Error_dB Variance = " << errorStats_dB.variance() << " dB" << std::endl;
+          std::cerr << "Error_raw Variance = " << std::scientific << errorStats_v.variance() << std::fixed << std::endl;
+
+
+          if (_sweepCount > 0 && _sweepNum >= _sweepCount) _terminate = true;
           if (_terminate) return;
           _drawMode = "AL";
+          ++ _sweepNum;
+          _maxDelta = 0;
+          _maxError = 0;
+          _minValue = Eigen::NumTraits<Scalar>::infinity();
+          _maxValue = -_minValue;
         }
       }
     }
@@ -191,6 +239,32 @@ public:
     unproc[2] = rawErr;
     proc = (unproc.array() + rawY).log10() * 20;
     proc.tail(2).array() -= proc[0];
+    auto delta = abs(proc[0] - _graph.GetY()[idx]);
+    if (delta > _maxDelta)
+    {
+      _maxDelta = delta;
+      _maxDeltaFreq = freq;
+    }
+    if (proc[0] > _maxValue)
+    {
+      _maxValue = proc[0];
+      _maxValueFreq = freq;
+    }
+    if (proc[0] < _minValue)
+    {
+      _minValue = proc[0];
+      _minValueFreq = freq;
+    }
+    if (-proc[1] > _maxError)
+    {
+      _maxError = -proc[1];
+      _maxErrorFreq = freq;
+    }
+    if (proc[2] > _maxError)
+    {
+      _maxError = proc[2];
+      _maxErrorFreq = freq;
+    }
     _graph.GetY()[idx] = proc[0];
     _graph.GetEYlow()[idx] = proc[1];
     _graph.GetEYhigh()[idx] = proc[2];
@@ -219,6 +293,18 @@ public:
           if (++ i >= *argc) throw std::invalid_argument("Output filename missing.");
           std::cerr << "Writing output to '" << argv[i] << "'." << std::endl;
           _fname = argv[i];
+          argv[i] = nullptr;
+        }
+        else if (!strcmp(argv[i], "-q"))
+        {
+          argv[i] = nullptr;
+          ++ _quiet;
+        }
+        else if (!strcmp(argv[i], "-n"))
+        {
+          argv[i] = nullptr;
+          if (++ i >= *argc) throw std::invalid_argument("Sweep count missing.");
+          _sweepCount = std::stoull(argv[i]);
           argv[i] = nullptr;
         }
         else if (!strcmp(argv[i], "-d"))
@@ -252,13 +338,20 @@ public:
           _gain = std::stod(argv[i]);
           argv[i] = nullptr;
         }
-        else if (!strcmp(argv[i], "-h"))
+        else if (!strcmp(argv[i], "-p"))
         {
           argv[i] = nullptr;
           if (++ i >= *argc) throw std::invalid_argument("Hop distance missing.");
           _hopDistance = std::stod(argv[i]);
           if (_hopDistance < 1) throw std::invalid_argument("Hop distance must be positive.");
           argv[i] = nullptr;
+        }
+        else if (!strcmp(argv[i], "-s"))
+        {
+          argv[i] = nullptr;
+          if (++ i >= *argc) throw std::invalid_argument("Settle seconds missing.");
+          _settleSecs = std::stod(argv[i]);
+          argv[i];
         }
         else if (!setEnv)
         {
@@ -313,14 +406,23 @@ private:
     std::cerr << "          emitX : Ints representing all active emitter setups"                 << std::endl;
     std::cerr                                                                                    << std::endl;
     std::cerr << "Options:"                                                                      << std::endl;
+    std::cerr << "     -h, --help : display this message"                                        << std::endl;
     std::cerr << "    -o a.noisep : create or update the file a.noisep"                          << std::endl;
+    std::cerr << "             -q : do not display gfx or show progress"                         << std::endl;
+    std::cerr << "  -n sweepCount : stop after this many sweeps"                                 << std::endl;
+    std::cerr << "                  (defaut: until interrupted)"                                 << std::endl;
     std::cerr << "   -d \"args...\" : SoapySDR device construction args (default: \"\")"         << std::endl;
     std::cerr << " -f minHz maxHz : hop between the passed range of tuning frequencies in hertz" << std::endl;
     std::cerr << "                  (default: 2000000000 1400000000)"                            << std::endl;
     std::cerr << "        -r rate : samplerate to record at (default: 2400000)"                  << std::endl;
     std::cerr << "      -g gaindB : dB gain for hardware amplifier (default: 43)"                << std::endl;
-    std::cerr << "       -h hopHz : distance between frequencies to tune to"                     << std::endl;
+    std::cerr << "       -p hopHz : distance between frequencies to tune to"                     << std::endl;
     std::cerr << "                  (default: samplerate / 2)"                                   << std::endl;
+    std::cerr << "  -s settleSecs : time to wait after tuning for state to settle"               << std::endl;
+    std::cerr << "                  (default: do not wait, as i have found no difference)"       << std::endl;
+    //std::cerr << "  -w dwellSecs  : time to dwell on a frequency before hopping to another"      << std::endl;
+    //std::cerr << "                  (default: ?)"                                                << std::endl;
+    //std::cerr << "     -w dBdelta : maximum dB error to wait for before hopping"               << std::endl;
     std::cerr                                                                                    << std::endl;
     Terminate(-1);
   }
@@ -352,16 +454,19 @@ private:
   THaltSignalHandler _sigQuit, _sigInterrupt, _sigTermination;
 
   std::string _fname;
+  unsigned _quiet;
   long long _env;
   std::vector<int64_t> _emits;
 
   char const * _drawMode;
 
+  unsigned long long _sweepCount;
   double _minTuneFreq;
   double _maxTuneFreq;
   long long _sampleRate;
   double _gain;
   double _hopDistance;
+  double _settleSecs;
   std::string _soapyArgs;
 
   std::random_device _randDev;
@@ -369,9 +474,15 @@ private:
   std::vector<_TuningFreq> _tuneFreqs{};
 
   bool _terminate;
+  size_t _sweepNum;
 
-  TCanvas _canvas;
+  std::unique_ptr<TCanvas> _canvas;
   TGraphAsymmErrors _graph;
+
+  Scalar _maxDelta, _maxDeltaFreq;
+  Scalar _maxError, _maxErrorFreq;
+  Scalar _maxValue, _maxValueFreq;
+  Scalar _minValue, _minValueFreq;
 };
 
 //ClassImp(T11ProfileEnv)

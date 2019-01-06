@@ -64,11 +64,11 @@
 //        - [X] file is not written if soapysdr throws
 //        - [X] graph has many lines extending upward when first developed
 //        - [X] chart may be given wrong range such that data is off bottom
-//        - [ ] no feedback that recording is happening
-//            -> also good to know if new sweeps are warranted
-//        - [ ] test settle time to ensure is large enough (also can speed rec by making smaller)
-//            - [ ] provide option for number of sweeps, and option for settle time
-//            - [ ] output variance and mean of error at end
+//        - [X] no feedback that recording is happening
+//        - [X] feedback regarding new sweeps being warranted
+//        - [X] test settle time to ensure is large enough (also can speed rec by making smaller)
+//            - [X] provide option for number of sweeps, and option for settle time
+//            - [X] output variance and mean of error at end
 //            - [ ] test different settle time results with 1 sweep
 // - [ ] make 1-2-gen-diff-hist.cpp
 //          -> combines two environment hists and produces emitter hist of changed emitter

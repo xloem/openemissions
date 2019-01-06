@@ -15,8 +15,9 @@
 class SoapyLive
 {
 public:
-  SoapyLive(const char * deviceStr, Scalar dB, Scalar sampleRate)
+  SoapyLive(const char * deviceStr, Scalar dB, Scalar sampleRate, Scalar settleSecs = 0.0)
   : _device(SoapySDR::Device::make(deviceStr)),
+    _settleSecs(settleSecs),
     _skip(0),
     _sampleTime(0)
   {
@@ -49,6 +50,7 @@ public:
     SoapySDR::Kwargs extra;
     extra["samplerate"] = std::to_string(_rate);
     extra["gain"] = std::to_string(_gain);
+    extra["settle"] = std::to_string(_settleSecs);
     extra["soapysdrapi"] = SoapySDR::getAPIVersion();
     extra["soapysdrlib"] = SoapySDR::getLibVersion();
     SysInfo_t sysinfo;
@@ -64,7 +66,7 @@ public:
   Scalar tune(Scalar freq)
   {
     _device->setFrequency(SOAPY_SDR_RX, 0, freq);
-    _skip = 0.1 * _rate;
+    _skip = _settleSecs * _rate;
     _freq = _device->getFrequency(SOAPY_SDR_RX, 0);
     return _freq;
   }
@@ -139,6 +141,7 @@ private:
   SoapySDR::Device * _device;
   SoapySDR::Stream * _stream;
 
+  Scalar _settleSecs;
   Scalar _rate;
   Scalar _gain;
   Scalar _freq;
