@@ -39,7 +39,7 @@ public:
   virtual void Run(Bool_t retrn) override
   {
     Int_t status = 0;
-    _terminate = false;
+    terminate = false;
     std::cerr << std::fixed;
     std::cerr << "Device construction args: '" << _soapyArgs << "'." << std::endl;
     std::cerr << "Recording at " << _sampleRate << " Hz in hops of " << _hopDistance << " Hz from " << _minTuneFreq << " Hz through " << _maxTuneFreq << " Hz." << std::endl;
@@ -147,10 +147,10 @@ public:
           canvas->Update();
         }
         tick();
-        if (quiet < 1 && canvas->GetCanvasImp() == nullptr) _terminate = true;
+        if (quiet < 1 && canvas->GetCanvasImp() == nullptr) terminate = true;
   
         // write file if a full sweep has completed
-        if (curFreq_it == _tuneFreqs.begin() || _terminate)
+        if (curFreq_it == _tuneFreqs.begin() || terminate)
         {
           std::cerr << "-sto";
           processor.write();
@@ -179,8 +179,8 @@ public:
           std::cerr << "Error_raw Variance = " << std::scientific << errorStats_v.variance() << std::fixed << std::endl;
 
 
-          if (_sweepCount > 0 && _sweepNum >= _sweepCount) _terminate = true;
-          if (_terminate) return;
+          if (_sweepCount > 0 && _sweepNum >= _sweepCount) terminate = true;
+          if (terminate) return;
           _drawMode = "AL";
           ++ _sweepNum;
           _maxDelta = 0;
@@ -346,7 +346,6 @@ private:
   std::mt19937 _randGen;
   std::vector<_TuningFreq> _tuneFreqs{};
 
-  bool _terminate;
   size_t _sweepNum;
 
   Scalar _maxDelta, _maxDeltaFreq;
