@@ -15,7 +15,7 @@
 class SoapyLive
 {
 public:
-  SoapyLive(const char * deviceStr, Scalar dB, Scalar sampleRate, Scalar settleSecs = 0.0)
+  SoapyLive(const char * deviceStr, Scalar dB, Scalar sampleRate, Scalar settleSecs = 0.0625)
   : _device(SoapySDR::Device::make(deviceStr)),
     _settleSecs(settleSecs),
     _skip(0),
@@ -109,7 +109,8 @@ public:
     _buf.resize(2 * _vec.size());
     void * buf = _buf.data();
 
-    meta.sampleTime = _sampleTime;
+   // SoapyRTLSDR drops buffers when tuning, so we don't actually know the sample time.
+    meta.sampleTime = ~0;//_sampleTime;
 
     // TODO: use global cast function to skip some of this extra stuff
     int count = _device->readStream(_stream, &buf, _vec.size(), flags, timeNs, 10000000);

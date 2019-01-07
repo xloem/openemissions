@@ -50,7 +50,7 @@
 //    - [X] show a chart of variance + error during recording
 //    - [X] catch termination and write before close
 //    - [X] test script, both for new data and updating
-//    - [ ] fix bugs:
+//    - [X] fix bugs:
 //        - [X] Y errors are all NaN
 //        - [X] does not save when window is closed
 //        - [X] does not save on ctrl-c
@@ -69,7 +69,10 @@
 //        - [X] test settle time to ensure is large enough (also can speed rec by making smaller)
 //            - [X] provide option for number of sweeps, and option for settle time
 //            - [X] output variance and mean of error at end
-//            - [ ] test different settle time results with 1 sweep
+//            - [X] test different settle time results with 1 sweep
+//        - [X] error appears similar on differing buffer sizes and magnitudes
+//        - [ ] add dwell/buffer time option, sets buffer size
+//        - [ ] update enforcement to allow source strings that match at start but one is shorter
 // - [ ] make 1-2-gen-diff-hist.cpp
 //          -> combines two environment hists and produces emitter hist of changed emitter
 //    - [ ] user passes 2 filenames, and output filename
