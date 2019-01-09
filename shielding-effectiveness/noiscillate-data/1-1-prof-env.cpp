@@ -9,6 +9,7 @@
 #include <iostream>
 #include <random>
 
+#include "chartprofile.hpp"
 #include "datafeeder.hpp"
 #include "processornoiseprofile.hpp"
 #include "rootapplication.hpp"
@@ -19,6 +20,8 @@ using Scalar = double;
 class T11ProfileEnv : public RootApplication
 {
 public:
+  using Profile = ProcessorNoiseProfile<Scalar, StatsAccumulatorHistogram<Scalar>, STATS_VARIANCE>;
+
   T11ProfileEnv(Int_t * argc, char ** argv)
   : RootApplication(
       "1-1-prof-env",
@@ -33,221 +36,8 @@ public:
     _hopDistance(0),
     _settleSecs(0.03125),
     _randGen(_randDev()),
-    _sweepNum(1)
-  { }
-
-  virtual void Run(Bool_t retrn) override
-  {
-    Int_t status = 0;
-    terminate = false;
-    std::cerr << std::fixed;
-    std::cerr << "Device construction args: '" << _soapyArgs << "'." << std::endl;
-    std::cerr << "Recording at " << _sampleRate << " Hz in hops of " << _hopDistance << " Hz from " << _minTuneFreq << " Hz through " << _maxTuneFreq << " Hz." << std::endl;
-
-    SoapyLive data(_soapyArgs.c_str(), _gain, _sampleRate, _settleSecs);
-    auto ident = data.ident();
-    std::cerr << "Device identification string: '" << ident << "'." << std::endl;
-    ProcessorNoiseProfile<Scalar, StatsAccumulatorHistogram<Scalar>, STATS_VARIANCE> processor(_fname, {data.epsilon(), data.midval()}, _env, _emits, {"SoapySDR", ident});
-
-    for (Scalar freq = _minTuneFreq; freq <= _maxTuneFreq; freq += _hopDistance)
-    {
-      _TuningFreq obj;
-      obj.freq = freq;//data.tune(freq);
-      obj.idx = _tuneFreqs.size();
-      _tuneFreqs.push_back(obj);
-    }
-    if (quiet < 1)
-    {
-      canvas.reset(new TCanvas());
-      canvas->SetTitle("Recording Profile");
-    }
-    graph.Set(_tuneFreqs.size());
-    for (size_t i = 0; i < _tuneFreqs.size(); ++ i)
-    {
-      graph.SetPoint(i, _tuneFreqs[i].freq, 0);
-      graph.SetPointError(i, -_sampleRate / 2, _sampleRate / 2, 0, 0);
-    }
-  
-    _drawMode = "AL";
-    for (auto & freq : _tuneFreqs)
-    {
-      try
-      {
-        setPoint(processor, freq.freq, freq.idx);
-      }
-      catch (std::out_of_range)
-      {
-        _drawMode = "AP";
-      }
-    }
-    if (quiet < 1)
-    {
-      graph.Draw(_drawMode);
-      graph.SetMinimum(-100);
-      graph.Draw(_drawMode);
-      canvas->Update();
-    }
-
-    try
-    {
-
-      std::cerr << "Recording environment " << processor.environment() << "." << std::endl;
-      auto & emits = processor.emitters();
-      std::cerr << emits.size() << " emitter(s) active" << (emits.empty() ? "." : ": ");
-      for (auto & emit : emits)
-      {
-        std::cerr << " " << emit;
-      }
-      std::cerr << std::endl;
-  
-      DataFeeder<Scalar, decltype(data), decltype(processor)> feeder(data, processor);
-      HeapVector<Complex> buffer(_sampleRate / 16);//512);////8);
-      RecBufMeta bufMeta;
-  
-      std::shuffle(_tuneFreqs.begin(), _tuneFreqs.end(), _randGen);
-      auto curFreq_it = _tuneFreqs.begin();
-      curFreq_it->freq = data.tune(curFreq_it->freq);
-
-      _maxDelta = 0;
-      _maxError = 0;
-      _minValue = Eigen::NumTraits<Scalar>::infinity();
-      _maxValue = -_minValue;
-
-      while (true)
-      {
-        data.readMany(buffer, bufMeta);
-        tick();
-        if (buffer.size() == 0) continue;
-        feeder.add(buffer.array().real(), bufMeta);
-  
-        auto freq = curFreq_it->freq;
-        auto freqIdx = curFreq_it->idx;
-
-        if (quiet < 1)
-        {
-          std::cerr << "\rSweep #" << _sweepNum << ": " << (curFreq_it - _tuneFreqs.begin()) * 100 / (_tuneFreqs.size() - 1) << "% (last @" << freq << " Hz)   " << std::flush;
-        }
-  
-        ++ curFreq_it;
-        if (curFreq_it == _tuneFreqs.end())
-        {
-          std::shuffle(_tuneFreqs.begin(), _tuneFreqs.end(), _randGen);
-          curFreq_it = _tuneFreqs.begin();
-        }
-        // tune first to provide more time for radio to settle
-        //    TODO might need to change code elsewhere to ensure this helps
-        curFreq_it->freq = data.tune(curFreq_it->freq);
-  
-        // process chart
-        // TODO: use a 2D histogram? user may understand signal better
-        setPoint(processor, freq, freqIdx);
-        if (quiet < 1 && gPad)
-        {
-          graph.Draw(_drawMode);
-          canvas->Update();
-        }
-        tick();
-        if (quiet < 1 && canvas->GetCanvasImp() == nullptr) terminate = true;
-  
-        // write file if a full sweep has completed
-        if (curFreq_it == _tuneFreqs.begin() || terminate)
-        {
-          std::cerr << "-sto";
-          processor.write();
-          std::cerr << "re-";
-          tick();
-          std::cerr << std::endl;
-          std::cerr << "Max Delta = " << _maxDelta << " dB at " << _maxDeltaFreq << " Hz" << std::endl;
-          std::cerr << "Max Error = " << _maxError << " dB at " << _maxErrorFreq << " Hz" << std::endl;
-          std::cerr << "Max Value = " << _maxValue << " dB at " << _maxValueFreq << " Hz" << std::endl;
-          std::cerr << "Min Value = " << _minValue << " dB at " << _minValueFreq << " Hz" << std::endl;
-
-          StatsAccumulator<Scalar> errorStats_v;
-          StatsAccumulator<Scalar> errorStats_dB;
-          for (auto & f : _tuneFreqs)
-          {
-            auto v = processor.bestMag(f.freq);
-            auto e = sqrt(processor.bestMagVariance(f.freq)) * 3;
-            errorStats_v.add(e);
-            auto e2 = graph.GetEYhigh()[f.idx] - graph.GetEYlow()[f.idx];
-            errorStats_dB.add(e2);
-            //assert(log10(v + e) * 20 - log10(v - e) * 20 == e2);
-          }
-          std::cerr << "Error_dB Mean = " << errorStats_dB.mean() << " dB" << std::endl;
-          std::cerr << "Error_raw Mean = " << std::scientific << errorStats_v.mean() << std::fixed << std::endl;
-          std::cerr << "Error_dB Variance = " << errorStats_dB.variance() << " dB" << std::endl;
-          std::cerr << "Error_raw Variance = " << std::scientific << errorStats_v.variance() << std::fixed << std::endl;
-
-
-          if (_sweepCount > 0 && _sweepNum >= _sweepCount) terminate = true;
-          if (terminate) return;
-          _drawMode = "AL";
-          ++ _sweepNum;
-          _maxDelta = 0;
-          _maxError = 0;
-          _minValue = Eigen::NumTraits<Scalar>::infinity();
-          _maxValue = -_minValue;
-        }
-      }
-    }
-    catch(...)
-    {
-      std::cerr << "-error-" << std::endl;
-      std::cerr << "-sto";
-      processor.write();
-      std::cerr << "re-";
-      throw;
-    }
-    tick();
-    processor.write();
-    tick();
-    Terminate(0);
-  }
-
-  template <typename T>
-  void setPoint(T & processor, Scalar freq, size_t idx)
-  {
-    auto rawY = processor.bestMag(freq);
-    auto rawVar = processor.bestMagVariance(freq);
-    auto rawErr = sqrt(rawVar) * 3;
-    FixedVector<Double_t,3> unproc, proc;
-    unproc[0] = 0;
-    unproc[1] = -rawErr;
-    unproc[2] = rawErr;
-    proc = (unproc.array() + rawY).log10() * 20;
-    proc.tail(2).array() -= proc[0];
-    auto delta = abs(proc[0] - graph.GetY()[idx]);
-    if (delta > _maxDelta)
-    {
-      _maxDelta = delta;
-      _maxDeltaFreq = freq;
-    }
-    if (proc[0] > _maxValue)
-    {
-      _maxValue = proc[0];
-      _maxValueFreq = freq;
-    }
-    if (proc[0] < _minValue)
-    {
-      _minValue = proc[0];
-      _minValueFreq = freq;
-    }
-    if (-proc[1] > _maxError)
-    {
-      _maxError = -proc[1];
-      _maxErrorFreq = freq;
-    }
-    if (proc[2] > _maxError)
-    {
-      _maxError = proc[2];
-      _maxErrorFreq = freq;
-    }
-    graph.GetY()[idx] = proc[0];
-    graph.GetEYlow()[idx] = proc[1];
-    graph.GetEYhigh()[idx] = proc[2];
-  }
-
-  void GetOptions(Int_t *argc, char **argv) override
+    _sweepNum(1),
+    _chart("Noise Power over Frequency")
   {
     regArg({{"-o"},{"a.noisep"}}, {"create or update the file a.noisep"},
       [this](std::string, std::string fname)
@@ -313,6 +103,133 @@ public:
     );
     //regArg({{"-w"},{"dwellSecs"}}, {"time to dwell on a frequency before hopping to antoher", "(default: ?)"});
     //regArg({{"-w"},{"dBdelta"}}, {"maximum dB error to wait for before hopping"});
+  }
+
+  virtual void Run(Bool_t retrn) override
+  {
+    Int_t status = 0;
+    terminate = false;
+    std::cerr << std::fixed;
+    std::cerr << "Device construction args: '" << _soapyArgs << "'." << std::endl;
+    std::cerr << "Recording at " << _sampleRate << " Hz in hops of " << _hopDistance << " Hz from " << _minTuneFreq << " Hz through " << _maxTuneFreq << " Hz." << std::endl;
+
+    SoapyLive data(_soapyArgs.c_str(), _gain, _sampleRate, _settleSecs);
+    auto ident = data.ident();
+    std::cerr << "Device identification string: '" << ident << "'." << std::endl;
+    Profile processor(_fname, {data.epsilon(), data.midval()}, _env, _emits, {"SoapySDR", ident});
+
+    Scalar freq = _minTuneFreq;
+    for (Int_t i = 0; freq <= _maxTuneFreq; ++ i, freq = _minTuneFreq + i * _hopDistance)
+    {
+      _TuningFreq obj;
+      obj.freq = freq;//data.tune(freq);
+      obj.idx = _tuneFreqs.size();
+      _tuneFreqs.push_back(obj);
+    }
+    if (quiet < 1)
+    {
+      _chart.canvas().reset(new TCanvas("1-1-prof-env"));
+      _chart.canvas()->SetTitle("Recording Profile");
+    }
+    _chart.prepPoints(_tuneFreqs.size(), _minTuneFreq, _hopDistance, quiet > 0);
+
+    _chart.draw(processor);
+
+    try
+    {
+
+      std::cerr << "Recording environment " << processor.environment() << "." << std::endl;
+      auto & emits = processor.emitters();
+      std::cerr << emits.size() << " emitter(s) active" << (emits.empty() ? "." : ": ");
+      for (auto & emit : emits)
+      {
+        std::cerr << " " << emit;
+      }
+      std::cerr << std::endl;
+  
+      DataFeeder<Scalar, decltype(data), decltype(processor)> feeder(data, processor);
+      HeapVector<Complex> buffer(_sampleRate / 16);//512);////8);
+      RecBufMeta bufMeta;
+  
+      std::shuffle(_tuneFreqs.begin(), _tuneFreqs.end(), _randGen);
+      auto curFreq_it = _tuneFreqs.begin();
+      curFreq_it->freq = data.tune(curFreq_it->freq);
+
+      _chart.resetMetrics();
+
+      while (true)
+      {
+        data.readMany(buffer, bufMeta);
+        tick();
+        if (buffer.size() == 0) continue;
+        feeder.add(buffer.array().real(), bufMeta);
+  
+        auto freq = curFreq_it->freq;
+        auto freqIdx = curFreq_it->idx;
+
+        if (quiet < 1)
+        {
+          std::cerr << "\rSweep #" << _sweepNum << ": " << (curFreq_it - _tuneFreqs.begin()) * 100 / (_tuneFreqs.size() - 1) << "% (last @" << freq << " Hz)   " << std::flush;
+        }
+  
+        ++ curFreq_it;
+        if (curFreq_it == _tuneFreqs.end())
+        {
+          std::shuffle(_tuneFreqs.begin(), _tuneFreqs.end(), _randGen);
+          curFreq_it = _tuneFreqs.begin();
+        }
+        // tune first to provide more time for radio to settle
+        //    TODO might need to change code elsewhere to ensure this helps
+        curFreq_it->freq = data.tune(curFreq_it->freq);
+  
+        // process chart
+        _chart.draw(processor, freqIdx);
+  
+        // write file if a full sweep has completed
+        if (curFreq_it == _tuneFreqs.begin() || terminate)
+        {
+          std::cerr << "-sto";
+          processor.write();
+          std::cerr << "re-";
+          _chart.finalize();
+          tick();
+          std::cerr << std::endl;
+          std::cerr << "Max Delta = " << _chart.maxDelta() << " dB at " << _chart.maxDeltaFreq() << " Hz" << std::endl;
+          std::cerr << "Max Error = " << _chart.maxError() << " dB at " << _chart.maxErrorFreq() << " Hz" << std::endl;
+          std::cerr << "Max Value = " << _chart.maxValue() << " dB at " << _chart.maxValueFreq() << " Hz" << std::endl;
+          std::cerr << "Min Value = " << _chart.minValue() << " dB at " << _chart.minValueFreq() << " Hz" << std::endl;
+
+          std::cerr << "Error_dB Mean = " << _chart.errorStats_dB().mean() << " dB" << std::endl;
+          std::cerr << "Error_raw Mean = " << std::scientific << _chart.errorStats_raw().mean() << std::fixed << std::endl;
+          std::cerr << "Error_dB Variance = " << _chart.errorStats_dB().variance() << " dB" << std::endl;
+          std::cerr << "Error_raw Variance = " << std::scientific << _chart.errorStats_raw().variance() << std::fixed << std::endl;
+
+
+          if (_sweepCount > 0 && _sweepNum >= _sweepCount) terminate = true;
+          if (terminate) return;
+
+          ++ _sweepNum;
+
+          _chart.resetMetrics();
+        }
+      }
+    }
+    catch(...)
+    {
+      std::cerr << "-error-" << std::endl;
+      std::cerr << "-sto";
+      processor.write();
+      std::cerr << "re-";
+      throw;
+    }
+    tick();
+    processor.write();
+    tick();
+    Terminate(0);
+  }
+
+  void GetOptions(Int_t *argc, char **argv) override
+  {
     RootApplication::GetOptions(argc, argv);
     if (_hopDistance == 0)
     {
@@ -348,10 +265,7 @@ private:
 
   size_t _sweepNum;
 
-  Scalar _maxDelta, _maxDeltaFreq;
-  Scalar _maxError, _maxErrorFreq;
-  Scalar _maxValue, _maxValueFreq;
-  Scalar _minValue, _minValueFreq;
+  RootChartProfile<Profile> _chart;
 };
 
 //ClassImp(T11ProfileEnv)

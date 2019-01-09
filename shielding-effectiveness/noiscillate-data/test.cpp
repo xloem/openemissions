@@ -36,6 +36,15 @@
 // - [ ] compare variance of deconvolution result to sum of original variances?
 //        -> for error tracking, want resulting error to be accurate
 //        -> we'll likely want to use the result that is consistently larger for large sample sizes
+//        Possible solutions:
+//        - [ ] apply a low-pass filter to the histogram to approximate the distribution better
+//        - [ ] just take the variance difference and don't produce an underlying histogram
+//              could rename the app, or provide a flag, or make a single final app that takes 4 recordings and combines them
+//        - [ ] invert the equation for convolution and solve it.   it has as many variables as equations.
+//              constrain it such that there are no negative counts.
+//        - [ ] use the knowledge that there should be no negative counts to discern how much to smooth distribution curve
+//        - [ ] look up how others estimate distribution curves based on measured data
+//        - [ ] correct for the incorrect variance by adjusting the sample count?
 // - [X] move recording code from test.cpp to 1-1-prof-env.cpp
 //          -> 1-1-prof-env will make a hist for an environment
 //          -> it will require the environment number and the emitter setup numbers that are active
@@ -71,14 +80,15 @@
 //            - [X] output variance and mean of error at end
 //            - [X] test different settle time results with 1 sweep
 //        - [X] error appears similar on differing buffer sizes and magnitudes
+//        - [ ] update processor to check before write that new data is similar to old data.  if different, write to different file and perhaps throw error
 //        - [ ] add dwell/buffer time option, sets buffer size
 //        - [ ] update enforcement to allow source strings that match at start but one is shorter
 // - [ ] make 1-2-gen-diff-hist.cpp
 //          -> combines two environment hists and produces emitter hist of changed emitter
-//    - [ ] user passes 2 filenames, and output filename
-//    - [ ] enforce that only 1 emitter changed between hists
-//    - [ ] enforce that both hists are same environment
-//    - [ ] enforce that both hists used same recording setup?
+//    - [X] user passes 2 filenames, and output filename
+//    - [X] enforce that only 1 emitter changed between hists
+//    - [X] enforce that both hists are same environment
+//    - [X] enforce that both hists used same recording setup?
 //    - [ ] output filenames of inputs in source list of file
 //    - [ ] use deconvolution to produce second hist
 //    - [ ] note whether freq shifted peaks are a problem:
@@ -3769,9 +3779,10 @@ int main(int argc, char const * const * argv)
 //      they couldnt' handle seeing me without livelihood, and kept supporting me with housing and food.
 //
 //
-// > I'm working on code to detect attenuation of a shielded room from a weak, oscillating noise source.
-//      It basically uses an obvious approach to do so: first it profiles the noise source to get an exact period
-//                                                      then i plan to detect it by integrating using that
+// > I'm now working on code to detect attenuation of a shielded room from a weak noise source.
+//      It records 4 profiles of shielded & unshielded, emitting & not emitting, and compares their
+//      statistics to discern the effectiveness of a shielded enclosure in detail.
+//
 // < thank you for letting me know
 // < just delaying him to do my job
 // > your job involves delaying him?
