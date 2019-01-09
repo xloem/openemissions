@@ -107,6 +107,7 @@ public:
 
   virtual void Run(Bool_t retrn) override
   {
+    std::unique_ptr<TCanvas> canvas;
     Int_t status = 0;
     terminate = false;
     std::cerr << std::fixed;
@@ -128,12 +129,13 @@ public:
     }
     if (quiet < 1)
     {
-      _chart.canvas().reset(new TCanvas("1-1-prof-env"));
-      _chart.canvas()->SetTitle("Recording Profile");
+      canvas.reset(new TCanvas("1-1-prof-env"));
+      _chart.pad() = &*canvas;
+      canvas->SetTitle("Recording Profile");
     }
     _chart.prepPoints(_tuneFreqs.size(), _minTuneFreq, _hopDistance, quiet > 0);
 
-    _chart.draw(processor);
+    _chart.paint(processor);
 
     try
     {
@@ -183,7 +185,7 @@ public:
         curFreq_it->freq = data.tune(curFreq_it->freq);
   
         // process chart
-        _chart.draw(processor, freqIdx);
+        _chart.paint(processor, freqIdx);
   
         // write file if a full sweep has completed
         if (curFreq_it == _tuneFreqs.begin() || terminate)
@@ -247,8 +249,6 @@ private:
   std::string _fname;
   long long _env;
   std::vector<int64_t> _emits;
-
-  char const * _drawMode;
 
   unsigned long long _sweepCount;
   double _minTuneFreq;

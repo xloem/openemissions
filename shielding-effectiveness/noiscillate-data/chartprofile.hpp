@@ -3,6 +3,7 @@
 #include <TAxis.h>
 #include <TCanvas.h>
 #include <TGraphAsymmErrors.h>
+#include <TROOT.h>
 #include <TSystem.h>
 
 #include "types.hpp"
@@ -17,9 +18,9 @@ public:
   using Profile = _Profile;
   using Scalar = typename Profile::Scalar;
 
-  RootChartProfile(char const * name, std::shared_ptr<TCanvas> canvas = {})
+  RootChartProfile(char const * name, TVirtualPad * pad = 0)
   : _hidden(true),
-    _canvas(canvas)
+    _pad(pad)
   {
     _graph.SetTitle(name);
     _graph.GetXaxis()->SetTitle("Frequency (Hz)");
@@ -28,18 +29,22 @@ public:
     _graph.SetHighlight(kTRUE);
   }
 
-  void init(Int_t count, bool hidden = false, std::shared_ptr<TCanvas> canvas = {})
+  void init(Int_t count, bool hidden = false, TVirtualPad * pad = 0)
   {
     _hidden = hidden;
     _graph.Set(count);
-    if (canvas)
+    if (pad)
     {
-      _canvas = canvas;
+      _pad = pad;
     }
-    if (!_canvas && !hidden)
+    if (!_pad && !hidden)
     {
-      _canvas.reset(new TCanvas());
-      _canvas->SetTitle(_graph.GetName());
+      if (!gPad)
+      {
+        gROOT->MakeDefCanvas();
+      }
+      _pad = gPad;
+      _pad->SetTitle(_graph.GetName());
     }
   }
 
@@ -70,7 +75,7 @@ public:
     }
   }
 
-  void draw(Profile & profile)
+  void paint(Profile & profile)
   {
     auto count = _graph.GetN();
     _drawMode = "AL";
@@ -83,12 +88,12 @@ public:
       }
       catch (std::out_of_range)
       {
-        _drawMode = "AP";
+        //_drawMode = "AP";
       }
     }
     if (!_hidden)
     {
-      _canvas->cd();
+      _pad->cd();
       _graph.Draw(_drawMode);
       if (_drawMode[1] == 'L')
       {
@@ -99,8 +104,8 @@ public:
       {
         _graph.SetMinimum(-100);
       }
-      _graph.Draw(_drawMode);
-      _canvas->Update();
+      _graph.Paint(_drawMode);
+      _pad->Update();
       gSystem->ProcessEvents();
     }
   }
@@ -112,31 +117,28 @@ public:
     _graph.SetMaximum(_maxValue);
   }
 
-  void draw(Profile & profile, Int_t idx)
+  void paint(Profile & profile, Int_t idx)
   {
     setPointInternal(profile, idx);
     if (!_hidden)
     {
-      _canvas->cd();
-      if (gPad)
-      {
-        _graph.Draw(_drawMode);
-        _canvas->Update();
-      }
+      _pad->cd();
+      _graph.Paint(_drawMode);
+      _pad->Update();
     }
     gSystem->ProcessEvents();
     if (!_hidden)
     {
-      if (_canvas->GetCanvasImp() == nullptr)
+      if (_pad->GetCanvasImp() == nullptr)
       {
         throw std::runtime_error("graph closed");
       }
     }
   }
 
-  std::shared_ptr<TCanvas> & canvas()
+  TVirtualPad * & pad()
   {
-    return _canvas;
+    return _pad;
   }
 
   Scalar maxDelta() const { return _maxDelta; }
@@ -204,7 +206,7 @@ private:
   }
 
   bool _hidden;
-  std::shared_ptr<TCanvas> _canvas;
+  TVirtualPad * _pad;
   TGraphAsymmErrors _graph;
   char const * _drawMode;
 
