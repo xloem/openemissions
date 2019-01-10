@@ -37,7 +37,7 @@ public:
     _settleSecs(0.03125),
     _randGen(_randDev()),
     _sweepNum(1),
-    _chart("Noise Power over Frequency")
+    _chart("Noise Power vs Frequency")
   {
     regArg({{"-o"},{"a.noisep"}}, {"create or update the file a.noisep"},
       [this](std::string, std::string fname)

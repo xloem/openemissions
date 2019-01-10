@@ -246,6 +246,29 @@ public:
   std::vector<int64_t> const & emitters() const { return _emits; }
   std::vector<std::string> const & srcDescs() { return _srcDescs; }
 
+  class FrequencyIterator
+  {
+    using MapIterator = typename std::map<Scalar, StatsAccumulator>::const_iterator;
+  public:
+    FrequencyIterator(MapIterator && it)
+    : _wrapped(std::move(it))
+    { }
+
+    FrequencyIterator & operator--() { -- _wrapped; return *this; }
+    FrequencyIterator & operator--(int) { auto ret(_wrapped); -- _wrapped; return ret; }
+    FrequencyIterator & operator++() { ++ _wrapped; return *this; }
+    FrequencyIterator & operator++(int) { auto ret(_wrapped); ++ _wrapped; return ret; }
+    Scalar operator*() { return (*_wrapped).first; }
+    bool operator!=(FrequencyIterator const & it) { return _wrapped != it._wrapped; }
+    bool operator==(FrequencyIterator const & it) { return _wrapped == it._wrapped; }
+  private:
+    MapIterator _wrapped;
+  };
+
+  FrequencyIterator begin() { return {_binsByFrequency.cbegin()}; }
+  FrequencyIterator end() { return {_binsByFrequency.cend()}; }
+  size_t size() { return _binsByFrequency.size(); }
+
 private:
   StatsAccumulator _initial;
   std::map<Scalar, StatsAccumulator> _binsByFrequency;

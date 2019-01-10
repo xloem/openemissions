@@ -75,6 +75,45 @@ public:
     }
   }
 
+  void prepPoints(Profile & profile, bool hidden = false)
+  {
+    init(profile.size(), hidden);
+    auto it = profile.begin();
+    Int_t idx = 0;
+    
+    while (it != profile.end())
+    {
+      Scalar freql = 0, freqh = 0;
+      auto freq = *it;
+      // - [ ] prepPoint each one individually
+      //       set only if not begin, only if not about end
+      //       if not set, freql/h will be zero, set to other high/low value
+      //       below is mostly to be removed or barely started
+      if (it != profile.begin())
+      {
+        -- it;
+        freql = (freq - *it) / 2;
+        ++ it;
+      }
+      ++ it;
+      if (it != profile.end())
+      {
+        freqh = (*it - freq) / 2;
+      }
+      if (freql == 0)
+      {
+        freql = freqh;
+      }
+      if (freqh == 0)
+      {
+        freqh = freql;
+      }
+      // freqh, freql, freq set for this point.  *it points to next point
+      prepPoint(idx, freql, freq, freqh);
+      ++ idx;
+    }
+  }
+
   void paint(Profile & profile)
   {
     auto count = _graph.GetN();
