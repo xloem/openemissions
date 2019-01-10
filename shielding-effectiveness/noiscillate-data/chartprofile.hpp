@@ -85,10 +85,6 @@ public:
     {
       Scalar freql = 0, freqh = 0;
       auto freq = *it;
-      // - [ ] prepPoint each one individually
-      //       set only if not begin, only if not about end
-      //       if not set, freql/h will be zero, set to other high/low value
-      //       below is mostly to be removed or barely started
       if (it != profile.begin())
       {
         -- it;
@@ -117,6 +113,7 @@ public:
   void paint(Profile & profile)
   {
     auto count = _graph.GetN();
+    bool setAll = true;
     _drawMode = "AL";
     resetMetrics();
     for (size_t i = 0; i < count; ++ i)
@@ -127,14 +124,14 @@ public:
       }
       catch (std::out_of_range)
       {
+        setAll = false;
         //_drawMode = "AP";
       }
     }
     if (!_hidden)
     {
       _pad->cd();
-      _graph.Draw(_drawMode);
-      if (_drawMode[1] == 'L')
+      if (setAll)
       {
         _graph.SetMinimum(_minValue);
         _graph.SetMaximum(_maxValue);
@@ -143,7 +140,8 @@ public:
       {
         _graph.SetMinimum(-100);
       }
-      _graph.Paint(_drawMode);
+      _graph.Draw(_drawMode);
+      //_graph.Paint(_drawMode);
       _pad->Update();
       gSystem->ProcessEvents();
     }

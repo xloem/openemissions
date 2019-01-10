@@ -179,17 +179,17 @@ protected:
 
   void regArg(std::initializer_list<std::initializer_list<std::string>> matches, std::vector<std::string> descr, std::function<void(std::string)> handler, size_t requiredCt = 0)
   {
-    regArg(matches, std::move(descr), [handler](std::vector<std::string> & v) { handler(v[0]); }, 1, requiredCt);
+    regArg(matches, std::move(descr), [handler](std::vector<std::string> & v) { handler(v.at(0)); }, 1, requiredCt);
   }
 
   void regArg(std::initializer_list<std::initializer_list<std::string>> matches, std::vector<std::string> descr, std::function<void(std::string, std::string)> handler, size_t requiredCt = 0)
   {
-    regArg(matches, std::move(descr), [handler](std::vector<std::string> & v) { handler(v[0], v[1]); }, 2, requiredCt);
+    regArg(matches, std::move(descr), [handler](std::vector<std::string> & v) { handler(v.at(0), v.at(1)); }, 2, requiredCt);
   }
 
   void regArg(std::initializer_list<std::initializer_list<std::string>> matches, std::vector<std::string> descr, std::function<void(std::string, std::string, std::string)> handler, size_t requiredCt = 0)
   {
-    regArg(matches, std::move(descr), [handler](std::vector<std::string> & v) { handler(v[0], v[1], v[2]); }, 3, requiredCt);
+    regArg(matches, std::move(descr), [handler](std::vector<std::string> & v) { handler(v.at(0), v.at(1), v.at(2)); }, 3, requiredCt);
   }
 
   virtual void PrintHelp()
