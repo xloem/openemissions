@@ -4,9 +4,6 @@
 #include <iostream>
 
 #include <TApplication.h>
-#include <TAxis.h>
-#include <TCanvas.h>
-#include <TGraphAsymmErrors.h>
 #include <TSysEvtHandler.h>
 #include <TSystem.h>
 
@@ -22,61 +19,10 @@ public:
     _sigInterrupt(*this, kSigInterrupt),
     _sigTermination(*this, kSigTermination)
   {
-    graph.SetTitle(name);
-    graph.GetXaxis()->SetTitle("Frequency (Hz)");
-    graph.GetYaxis()->SetTitle("Power (dB)");
-    graph.SetEditable(kFALSE);
-    graph.SetHighlight(kTRUE);
-
     _sigQuit.Add();
     _sigInterrupt.Add();
     _sigTermination.Add();
-  }
 
-protected:
-  void tick()
-  {
-    gSystem->ProcessEvents();
-  }
-
-  void regArg(std::initializer_list<std::initializer_list<std::string>> matches, std::vector<std::string> && descr, std::function<void(std::vector<std::string> &)> handler, size_t subargs, size_t requiredCt)
-  {
-    if (matches.size() != subargs) throw std::logic_error("doc mismatches implementation");
-    auto argIdx = _argDescrs.size();
-    _argDescrs.emplace_back();
-    Arg & arg = _argDescrs.back();
-    for (auto & match : matches)
-    {
-      arg.matches.emplace_back(match);
-    }
-    arg.handler = handler;
-    arg.args = subargs;
-    arg.required = requiredCt;
-    arg.requiredLeft = requiredCt;
-    arg.descr = std::move(descr);
-    for (auto & match : arg.matches[0])
-    {
-      _argMap[match] = argIdx;
-    }
-  }
-
-  void regArg(std::initializer_list<std::initializer_list<std::string>> matches, std::vector<std::string> descr, std::function<void(std::string)> handler, size_t requiredCt = 0)
-  {
-    regArg(matches, std::move(descr), [handler](std::vector<std::string> & v) { handler(v[0]); }, 1, requiredCt);
-  }
-
-  void regArg(std::initializer_list<std::initializer_list<std::string>> matches, std::vector<std::string> descr, std::function<void(std::string, std::string)> handler, size_t requiredCt = 0)
-  {
-    regArg(matches, std::move(descr), [handler](std::vector<std::string> & v) { handler(v[0], v[1]); }, 2, requiredCt);
-  }
-
-  void regArg(std::initializer_list<std::initializer_list<std::string>> matches, std::vector<std::string> descr, std::function<void(std::string, std::string, std::string)> handler, size_t requiredCt = 0)
-  {
-    regArg(matches, std::move(descr), [handler](std::vector<std::string> & v) { handler(v[0], v[1], v[2]); }, 3, requiredCt);
-  }
-
-  virtual void GetOptions(Int_t *argc, char **argv) override
-  {
     regArg({{"-h","-?","--help"}}, {"display this message"},
       [this](std::string)
       {
@@ -90,7 +36,10 @@ protected:
         ++ quiet;
       }
     );
+  }
 
+  virtual void GetOptions(Int_t *argc, char **argv) override
+  {
     std::vector<std::string> subargs;
     size_t otherCt = 0;
     for (int i = 1; i < *argc; ++ i)
@@ -201,6 +150,48 @@ continue_outer:
     }
   }
 
+protected:
+  void tick()
+  {
+    gSystem->ProcessEvents();
+  }
+
+  void regArg(std::initializer_list<std::initializer_list<std::string>> matches, std::vector<std::string> && descr, std::function<void(std::vector<std::string> &)> handler, size_t subargs, size_t requiredCt)
+  {
+    if (matches.size() != subargs) throw std::logic_error("doc mismatches implementation");
+    auto argIdx = _argDescrs.size();
+    _argDescrs.emplace_back();
+    Arg & arg = _argDescrs.back();
+    for (auto & match : matches)
+    {
+      arg.matches.emplace_back(match);
+    }
+    arg.handler = handler;
+    arg.args = subargs;
+    arg.required = requiredCt;
+    arg.requiredLeft = requiredCt;
+    arg.descr = std::move(descr);
+    for (auto & match : arg.matches[0])
+    {
+      _argMap[match] = argIdx;
+    }
+  }
+
+  void regArg(std::initializer_list<std::initializer_list<std::string>> matches, std::vector<std::string> descr, std::function<void(std::string)> handler, size_t requiredCt = 0)
+  {
+    regArg(matches, std::move(descr), [handler](std::vector<std::string> & v) { handler(v.at(0)); }, 1, requiredCt);
+  }
+
+  void regArg(std::initializer_list<std::initializer_list<std::string>> matches, std::vector<std::string> descr, std::function<void(std::string, std::string)> handler, size_t requiredCt = 0)
+  {
+    regArg(matches, std::move(descr), [handler](std::vector<std::string> & v) { handler(v.at(0), v.at(1)); }, 2, requiredCt);
+  }
+
+  void regArg(std::initializer_list<std::initializer_list<std::string>> matches, std::vector<std::string> descr, std::function<void(std::string, std::string, std::string)> handler, size_t requiredCt = 0)
+  {
+    regArg(matches, std::move(descr), [handler](std::vector<std::string> & v) { handler(v.at(0), v.at(1), v.at(2)); }, 3, requiredCt);
+  }
+
   virtual void PrintHelp()
   {
     std::cout << std::endl;
@@ -299,8 +290,6 @@ continue_outer:
 
   bool terminate;
   int quiet;
-  std::unique_ptr<TCanvas> canvas;
-  TGraphAsymmErrors graph;
 
 private:
   virtual void HandleException(Int_t sig = -1) override

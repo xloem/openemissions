@@ -1,12 +1,12 @@
 #pragma once
 
-#include <initializer_list>
-#include <iostream>
-#include <list>
+#include <fstream>
+#include <set>
 #include <vector>
 
 #include <time.h>
 
+#include "recbufmeta.hpp"
 #include "stats.hpp"
 
 template <typename _Scalar, typename _StatsAccumulator, StatsStatistic STATISTIC = STATS_MEAN>
@@ -17,7 +17,7 @@ public:
   using StatsAccumulator = _StatsAccumulator;
   using Scalar = _Scalar;
 
-  ProcessorNoiseProfile(std::string fname, StatsAccumulator const & initial, int64_t env = INVALIDINT64, std::vector<int64_t> emits = {}, std::initializer_list<std::string> srcDesc = {})
+  ProcessorNoiseProfile(std::string fname, StatsAccumulator const & initial, int64_t env = INVALIDINT64, std::vector<int64_t> emits = {}, std::vector<std::string> srcDesc = {})
   : _initial(initial),
     _totalSamps(0),
     _fname(fname),
@@ -129,6 +129,65 @@ public:
     std::rename(tmpname.c_str(), _fname.c_str());
   }
 
+  template <typename Predicate, typename ... Profiles>
+  void fromStatsPredicate(Predicate predicate, Profiles & ... profiles)
+  {
+    _binsByFrequency.clear();
+    std::set<Scalar> sharedFreqs;
+    bool initial = true;
+    for (auto * profile : {&profiles ...})
+    {
+      std::set<Scalar> freqs;
+      for (auto pair : profile->_binsByFrequency)
+      {
+        auto freq = pair.first;
+        if (initial)
+        {
+          sharedFreqs.insert(freq);
+        }
+        else
+        {
+          if (sharedFreqs.count(freq))
+          {
+            freqs.insert(freq);
+          }
+        }
+      }
+      if (initial)
+      {
+        _totalSamps = profile->_totalSamps;
+        _startTime = profile->_startTime;
+        _stopTime = profile->_stopTime;
+        initial = false;
+      }
+      else
+      {
+        if (_totalSamps > profile->_totalSamps)
+        {
+          _totalSamps = profile->_totalSamps;
+        }
+        if (_startTime > profile->_startTime)
+        {
+          _startTime = profile->_startTime;
+        }
+        if (_stopTime < profile->_stopTime)
+        {
+          _stopTime = profile->_stopTime;
+        }
+        sharedFreqs = std::move(freqs);
+      }
+    }
+    if (!sharedFreqs.size())
+    {
+      throw std::invalid_argument("profiles share no frequencieds");
+    }
+
+    for (auto freq : sharedFreqs)
+    {
+      _binsByFrequency.emplace(freq, predicate(profiles._binsByFrequency[freq]...));
+    }
+  }
+
   size_t bufferSizeMin() const
   {
     return 1;
@@ -185,7 +244,30 @@ public:
   time_t stopTime() const { return _stopTime; }
   int64_t environment() const { return _env; }
   std::vector<int64_t> const & emitters() const { return _emits; }
-  std::list<std::string> const & srcDescs() { return _srcDescs; }
+  std::vector<std::string> const & srcDescs() { return _srcDescs; }
+
+  class FrequencyIterator
+  {
+    using MapIterator = typename std::map<Scalar, StatsAccumulator>::const_iterator;
+  public:
+    FrequencyIterator(MapIterator && it)
+    : _wrapped(std::move(it))
+    { }
+
+    FrequencyIterator & operator--() { -- _wrapped; return *this; }
+    FrequencyIterator & operator--(int) { auto ret(_wrapped); -- _wrapped; return ret; }
+    FrequencyIterator & operator++() { ++ _wrapped; return *this; }
+    FrequencyIterator & operator++(int) { auto ret(_wrapped); ++ _wrapped; return ret; }
+    Scalar operator*() { return (*_wrapped).first; }
+    bool operator!=(FrequencyIterator const & it) { return _wrapped != it._wrapped; }
+    bool operator==(FrequencyIterator const & it) { return _wrapped == it._wrapped; }
+  private:
+    MapIterator _wrapped;
+  };
+
+  FrequencyIterator begin() { return {_binsByFrequency.cbegin()}; }
+  FrequencyIterator end() { return {_binsByFrequency.cend()}; }
+  size_t size() { return _binsByFrequency.size(); }
 
 private:
   StatsAccumulator _initial;
@@ -196,5 +278,5 @@ private:
   uint64_t _stopTime;
   int64_t _env;
   std::vector<int64_t> _emits;
-  std::list<std::string> _srcDescs;
+  std::vector<std::string> _srcDescs;
 };

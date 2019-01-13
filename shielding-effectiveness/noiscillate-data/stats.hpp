@@ -1,5 +1,7 @@
 #pragma once
 
+#include <iostream>
+
 #include "types.hpp"
 
 #include <unsupported/Eigen/SpecialFunctions>
@@ -369,7 +371,8 @@ public:
   static_assert(!(OPTIONS & STATS_ASSUME_NORMAL), "Use StatsAccumulatorNormal to assume normal.");
   //static_assert(!(OPTIONS & STATS_INFINITE), "StatsAccumulators cannot be infinite.");
 
-  StatsAccumulatorHistogram(Scalar binWidth, Scalar initial = 0)
+
+  StatsAccumulatorHistogram(Scalar binWidth = 0, Scalar initial = 0)
   : binWidth(binWidth),
     binDensity(1.0 / binWidth),
     binStart(initial * binDensity)
@@ -493,6 +496,11 @@ public:
   // Assuming this distribution is made by summing data with another distribution,
   // estimate a distribution of the unsummed data (the data summed with the other to
   // produce this).
+  template <StatsOptions OPTIONS2>
+  static StatsAccumulatorHistogram<T, OPTIONS2> fromRemovedFromSum(StatsAccumulatorHistogram<T, OPTIONS> & sum, StatsAccumulatorHistogram<T, OPTIONS2> & otherComponent)
+  {
+    return sum.withRemovedFromSum(otherComponent);
+  }
   template <StatsOptions OPTIONS2>
   StatsAccumulatorHistogram<T, OPTIONS2> withRemovedFromSum(StatsAccumulatorHistogram<T, OPTIONS2> & componentDistribution)
   {
