@@ -29,13 +29,17 @@
 // - [ ] make 2-2-plot-diff
 // 	- either loads two hists of same env and plots emitter
 // 	  or loads 4 hists of 2 envs and determines emitter change between envs
-//	- [ ] accept args:
+//	- [X] accept args:
 //		--e1 1bg.noisep 1emit.noisep
 //		--e2 2bg.noisep 2emit.noisep
-//	- [ ] verify that one emitter is enabled in emit
-//	- [ ] verify that same emitter is enabled in both passes
-//	- [ ] plot emitter curves
-//	- [ ] plot difference curve
+//	- [X] verify that one emitter is enabled in emit
+//	- [X] verify that same emitter is enabled in both passes
+//	- [X] plot emitter curves
+//	- [X] plot difference curve
+//	- [X] test for compile-time errors of emitter plotting
+//	- [ ] test for run-time errors of emitter plotting
+//	- [X] test for compile-time errors of difference plotting
+//	- [ ] test for run-time errors of difference plotting
 
 ////////
 // 2018-01-03: another attempt
