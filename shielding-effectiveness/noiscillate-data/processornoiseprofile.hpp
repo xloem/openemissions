@@ -66,6 +66,7 @@ public:
             if (it == _srcDescs.end())
             {
               it = _srcDescs.insert(it, std::move(desc));
+              ++ it;
             }
             else if (desc != *it)
             {
@@ -238,6 +239,12 @@ public:
     auto ret = StatsDistributionSampling<Scalar, STATISTIC>(bin.fakeInfinitePopulation(), bin.size()).variance();
     //std::cerr << freq << " x " << bin.size() << " -> " << std::scientific << ret << std::fixed << std::endl;
     return ret;
+  }
+
+  decltype(auto) distribution(Scalar & freq)
+  {
+    auto & bin = _binsByFrequency.at(freq);
+    return StatsDistributionSampling<Scalar, STATISTIC>(bin.fakeInfinitePopulation(), bin.size());
   }
 
   time_t startTime() const { return _startTime; }

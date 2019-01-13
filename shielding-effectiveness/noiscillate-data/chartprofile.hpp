@@ -88,21 +88,21 @@ public:
       if (it != profile.begin())
       {
         -- it;
-        freql = (freq - *it) / 2;
+        freql = (freq + *it) / 2;
         ++ it;
       }
       ++ it;
       if (it != profile.end())
       {
-        freqh = (*it - freq) / 2;
+        freqh = (freq + *it) / 2;
       }
       if (freql == 0)
       {
-        freql = freqh;
+        freql = 2 * freq - freqh;
       }
       if (freqh == 0)
       {
-        freqh = freql;
+        freqh = 2 * freq - freql;
       }
       // freqh, freql, freq set for this point.  *it points to next point
       prepPoint(idx, freql, freq, freqh);

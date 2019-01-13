@@ -130,6 +130,7 @@ public:
     if (quiet < 1)
     {
       canvas.reset(new TCanvas("1-1-prof-env"));
+      canvas->ToggleToolTips();
       _chart.pad() = &*canvas;
       canvas->SetTitle("Recording Profile");
     }

@@ -56,6 +56,7 @@ public:
 		if (quiet < 1)
 		{
 			_canvas.reset(new TCanvas());
+      _canvas->ToggleToolTips();
 			
 			if (_shielded)
 			{
@@ -92,6 +93,11 @@ public:
 			_seChart->paint(_seP);
 			tick();
 		}
+
+    while (!terminate)
+    {
+      tick();
+    }
 	}
 
 private:
@@ -103,6 +109,7 @@ private:
 		decltype(auto) end() { return _freqs.cend(); }
 		Scalar bestMag(Scalar freq) { return _dists.at(freq).mean(); }
 		Scalar bestMagVariance(Scalar freq) { return _dists.at(freq).variance(); }
+    StatsDistributionBrief<Scalar> & distribution(Scalar freq) { return _dists.at(freq); }
 		size_t size() { return _freqs.size(); }
 
 		template <typename Profile>
@@ -110,12 +117,24 @@ private:
 		{
 			_dists.clear();
 			_freqs.clear();
+      Scalar unexpectedEmitterSignificance = 1.0;
+      Scalar min = 0;
 			for (auto freq : bg)
 			{
 				try
 				{
-					auto mag = fg.bestMag(freq) - bg.bestMag(freq);
-					auto var = fg.bestMagVariance(freq) - bg.bestMagVariance(freq);
+          auto bgMag = bg.bestMag(freq);
+					auto mag = fg.bestMag(freq) - bgMag;
+					auto var = fg.bestMagVariance(freq) + bg.bestMagVariance(freq);
+          auto err = sqrt(var) * 3;
+          if (mag - err < 0)
+          {
+            unexpectedEmitterSignificance *= fg.distribution(freq).deviationSignificance(bgMag);
+          }
+          else if (mag - err < min)
+          {
+            min = mag - err;
+          }
 					_freqs.push_back(freq);
 					// funny syntax provides for true map emplacing
 					_dists.emplace(
@@ -127,6 +146,24 @@ private:
 				catch (std::out_of_range)
 				{ }
 			}
+      for (auto & elem : _dists)
+      {
+        if (elem.second.mean() <= 0)
+        {
+          elem.second.setMean(min + elem.second.standardDeviation() * 3);
+        }
+      }
+      auto unexpectedEmitterLikelihood = 1.0 - unexpectedEmitterSignificance;
+      std::cerr << unexpectedEmitterLikelihood*100 << "% chance of a rogue emitter running in weak areas." << std::endl;
+      std::cerr << "  (signifiance = " << unexpectedEmitterSignificance * 100 << "%)" << std::endl;
+      if (unexpectedEmitterLikelihood > 0.001)
+      {
+        std::cerr << "WARNING: DETECTED CHANCE OF UNRECORDED EMITTER IN BG BUT NOT FG" << std::endl;
+      }
+      if (unexpectedEmitterLikelihood > 0.1)
+      {
+        throw std::runtime_error("data demonstrates emitter in bg missing from fg");
+      }
 		}
 	private:
 		std::vector<Scalar> _freqs;

@@ -169,9 +169,9 @@ public:
   Scalar sum3AboutMean() const { return sum3() + (-3 * sum2() + 2 * sum1() * mean()) * mean(); }
   Scalar sum4AboutMean() const { return sum4() + (-4 * sum3() + (6 * sum2() + -3 * sum1() * mean()) * mean()) * mean(); }
 
-  Scalar moment2AboutMean() const { return sum2() / size(); }
-  Scalar moment3AboutMean() const { return sum3() / size(); }
-  Scalar moment4AboutMean() const { return sum4() / size(); }
+  Scalar moment2AboutMean() const { return sum2AboutMean() / size(); }
+  Scalar moment3AboutMean() const { return sum3AboutMean() / size(); }
+  Scalar moment4AboutMean() const { return sum4AboutMean() / size(); }
 
   // For data which has had its absoute value taken before the statistics were taken,
   // if that data had a zero mean,
@@ -247,8 +247,47 @@ private:
   Scalar _sum4; // sum[x^4], only used if not assuming normal
 };
 
+#include <boost/math/special_functions/gamma.hpp>
+// TODO: convert everything to boost stats
+template <typename T, StatsOptions OPTIONS = STATS_INFINITE>
+class StatsDistributionChiSquared : public StatsDistributionByMeasures<T, StatsDistributionChiSquared<T, OPTIONS>, OPTIONS>
+{
+public:
+  using Scalar = T;
+
+  StatsDistributionChiSquared(Scalar dof)
+  : StatsDistributionByMeasures<T, StatsDistributionChiSquared<T, OPTIONS>, OPTIONS>(dof, 2 * dof, 12/dof + 3),
+    _dof(dof),
+    _halfDof(dof)
+  { };
+
+  /*
+  Scalar pdf(Scalar val)
+  {
+    if (val <= 0) return 0;
+    return pow(val,_halfDof-1) * exp(-val/2) / (pow(2,_halfDof) * tgamma(_halfDof));
+  }
+  */
+
+  Scalar deviationSignificance(Scalar val)
+  {
+    if (val < this->mean())
+    {
+      return 2*boost::math::gamma_p(_halfDof, val/2);
+    }
+    else 
+    {
+      return 2*boost::math::gamma_q(_halfDof, val/2);
+    }
+  }
+
+private:
+  Scalar _dof;
+  Scalar _halfDof;
+};
+
 //template <typename T, StatsStatistic STATISTIC, StatsOptions OPTIONS = STATS_INFINITE | STATS_ASSUME_NORMAL>
-template <typename T, StatsStatistic STATISTIC, StatsOptions OPTIONS = STATS_INFINITE | STATS_ASSUME_NORMAL>
+template <typename T, StatsStatistic STATISTIC, StatsOptions OPTIONS = STATS_INFINITE>
 class StatsDistributionSampling : public StatsDistributionByMeasures<T, StatsDistributionSampling<T, STATISTIC, OPTIONS | STATS_INFINITE>, OPTIONS>
 {
 public:
@@ -263,10 +302,6 @@ public:
       getVariance(sampled, sampleSize)
     )
   {
-    if (!this->assumeNormal())
-    {
-      throw std::logic_error("unimplemented");
-    }
     if (sampled.isSample())
     {
       throw std::logic_error("sampled distribution is not a population");
@@ -279,7 +314,20 @@ public:
   template <typename Derived, StatsOptions OPTIONS2>
   Scalar deviationSignificance(StatsDistribution<Scalar, Derived, OPTIONS2> const & outliers)
   {
-    return StatsDistributionByMeasures<T, StatsDistributionSampling<T, STATISTIC, OPTIONS | STATS_INFINITE>, OPTIONS>::deviationSignificance(outliers.template get<STATISTIC>());
+    return deviationSignificance(outliers.template get<STATISTIC>());
+  }
+
+  Scalar deviationSignificance(Scalar outlierStatistic)
+  {
+    if (!this->assumeNormal())
+    {
+      switch(STATISTIC)
+      {
+      case STATS_VARIANCE:
+        return StatsDistributionChiSquared<Scalar>(_dof).deviationSignificance(outlierStatistic / this->mean() * _dof);
+      }
+    }
+    return StatsDistributionByMeasures<T, StatsDistributionSampling<T, STATISTIC, OPTIONS | STATS_INFINITE>, OPTIONS>::deviationSignificance(outlierStatistic);
   }
 
 private:
@@ -290,25 +338,33 @@ private:
   }
 
   template <typename Distribution>
-  static Scalar getVariance(Distribution const & sampled, size_t sampleSize)
+  Scalar getVariance(Distribution const & sampled, size_t sampleSize)
   {
     switch (STATISTIC)
     {
     case STATS_MEAN:
       return sampled.variance() / sampleSize;
     case STATS_VARIANCE:
+      // verify correctness of stuff by asserting that these values are the same as those calculated
+      // by the new chisquared distribution
+      
       // https://en.wikipedia.org/wiki/Variance#Distribution_of_the_sample_variance
       if (sampled.assumeNormal())
       {
-        // distribution would be chi-square with n-1 degrees of freedom?
-        // TODO: use an actual chi-squared distribution?
+        _dof = sampleSize - 1;
         auto ss = sampled.variance();
-        return 2 * ss * ss / (sampleSize - 1);
+        auto ret = 2 * ss * ss / _dof;
+        auto retcmp = StatsDistributionChiSquared<T>(_dof).variance() * ss * ss / (_dof * _dof);
+        assert(ret == retcmp);
+        return ret;
       }
       else
       {
+        // https://stats.stackexchange.com/a/347476/233920
+        _dof = 2 * sampleSize / (sampled.kurtosis() - (sampleSize - 3) / (sampleSize - Scalar(1)));
         auto ss = sampled.variance();
-        return (sampled.kurtosis() - 1 + 2.0 / (sampleSize - 1)) * ss * ss / sampleSize;
+        auto ret = (sampled.kurtosis() - 1 + Scalar(2) / (sampleSize - 1)) * ss * ss / sampleSize;
+        return ret;
       }
     /*
     case STATS_STANDARD_DEVIATION:
@@ -338,6 +394,11 @@ private:
       throw std::logic_error("unimplemented");
     }
   }
+
+private:
+  union {
+    Scalar _dof;
+  };
 };
 
 template <typename T, StatsOptions OPTIONS = STATS_SAMPLE>
@@ -591,6 +652,8 @@ public:
     std::cerr << "Our bins sum: " << buf.sum() << std::endl;
     std::cerr << "Component bins sum: " << otherbuf.sum() << std::endl;
     std::cerr << "Product sum: " << (buf.array() * otherbuf.array()).sum() << std::endl;
+    assert(buf.sum());
+    assert(otherbuf.sum());
 
     fft.fwd(fftResult, buf);
     fft.fwd(fftOther, otherbuf);
@@ -727,7 +790,7 @@ private:
     if (size > bins.size())
     {
       size_t oldSize = bins.size();
-      assert(size <= 384); // TODO: remove for non-rtl-sdr
+      assert(size <= 512); // TODO: remove for non-rtl-sdr
       sumCoeffs.reset();
       bins.conservativeResize(size);
       bins.tail(size - oldSize).setZero();
@@ -799,6 +862,8 @@ public:
   using Measures::setMeasures;
   using Measures::setMean;
   using Measures::setVariance;
+  using Measures::setKurtosis;
+  using Measures::deviationSignificance;
 };
 
 template <typename T, StatsOptions OPTIONS = STATS_SAMPLE | STATS_ASSUME_NORMAL>

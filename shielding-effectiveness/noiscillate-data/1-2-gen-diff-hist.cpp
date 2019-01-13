@@ -21,8 +21,8 @@ public:
   T12GenDiff(Int_t * argc, char ** argv)
   : RootApplication(
       "1-2-gen-diff-hist",
-      "Loads two histogram profiles of the same environment and produces\n"
-      "a profile of one emitter that changed between the recordings.",
+      "Loads two histogram profiles of the same environment that differ by\n"
+      "only one emitter, and produces a profile of that emitter.",
       argc, argv),
     _inchart1("No Emitter"),
     _inchart2("With Emitter"),
@@ -34,10 +34,15 @@ public:
         _outfn = outfn;
       }, 1 // required
     );
-    regArg({{}, {"1.noisep"},{"2.noisep"}}, {"two noise histograms to compare"},
-      [this](std::string, std::string fname1, std::string fname2)
+    regArg({{}, {"1.noisep"}}, {"first noise histogram to compare"},
+      [this](std::string, std::string fname1)
       {
         _infn1 = fname1;
+      }, 1 // required
+    );
+    regArg({{}, {"2.noisep"}}, {"second noise histogram to compare"},
+      [this](std::string, std::string fname2)
+      {
         _infn2 = fname2;
       }, 1 // required
     );
@@ -49,6 +54,7 @@ public:
     if (quiet < 1)
     {
       _canvas.reset(new TCanvas());
+      _canvas->ToggleToolTips();
       _canvas->cd();
       _canvas->Divide(1,2);
       _inchart1.pad() = _canvas->GetPad(1);
@@ -60,6 +66,12 @@ public:
   virtual void Run(Bool_t retrn) override
   {
     ProcessorNoiseProfile<Scalar, StatsAccumulatorHistogram<Scalar>, STATS_VARIANCE> inp1(_infn1, {0});
+    std::cout << "== Source identification strings ==" << std::endl;
+    for (auto str : inp1.srcDescs())
+    {
+      std::cout << str << std::endl;
+    }
+    std::cout << "===================================" << std::endl;
     ProcessorNoiseProfile<Scalar, StatsAccumulatorHistogram<Scalar>, STATS_VARIANCE> inp2(_infn2, {0}, inp1.environment(), {}, inp1.srcDescs());
 
     // find emitter from symmetric difference
