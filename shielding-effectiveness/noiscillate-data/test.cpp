@@ -14,10 +14,6 @@
 #include "soapylive.hpp"
 
 /****
- * SUCCESSFUL APPROACH should be 2018-01-03 below, seems accurate and reasonably fast to implement
- */
-
-/****
  * https://learnemc.com/shielding-theory
  * Indicates the needed SE to prevent detectable signals completely is ==> 240 dB. <==
  *      (this is followed by a flawed statement that 100 dB is sufficient, rooted in the assumption that the emitter and receiver share the same dynamic range)
@@ -28,6 +24,18 @@
  *  -> the SE is the decrease of this parameter provided by the shielded enclosure
  **/
 
+////////
+// 2018-01-13: another attempt.  resolving distribution subtraction seemed a bit of a frazzling point -- let's skip it for now
+// - [ ] make 2-2-plot-diff
+// 	- either loads two hists of same env and plots emitter
+// 	  or loads 4 hists of 2 envs and determines emitter change between envs
+//	- [ ] accept args:
+//		--e1 1bg.noisep 1emit.noisep
+//		--e2 2bg.noisep 2emit.noisep
+//	- [ ] verify that one emitter is enabled in emit
+//	- [ ] verify that same emitter is enabled in both passes
+//	- [ ] plot emitter curves
+//	- [ ] plot difference curve
 
 ////////
 // 2018-01-03: another attempt
