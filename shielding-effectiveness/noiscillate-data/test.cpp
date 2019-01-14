@@ -27,27 +27,27 @@
 ////////
 // 2018-01-13: another attempt.  resolving distribution subtraction seemed a bit of a frazzling point -- let's skip it for now
 // - [X] make 2-2-plot-diff
-// 	- either loads two hists of same env and plots emitter
-// 	  or loads 4 hists of 2 envs and determines emitter change between envs
-//	- [X] accept args:
-//		--e1 1bg.noisep 1emit.noisep
-//		--e2 2bg.noisep 2emit.noisep
-//	- [X] verify that one emitter is enabled in emit
-//	- [X] verify that same emitter is enabled in both passes
-//	- [X] plot emitter curves
-//	- [X] plot difference curve
-//	- [X] test for compile-time errors of emitter plotting
-//	- [X] test for compile-time errors of difference plotting
-//	- [ ] test for run-time errors
-//	  - [X] fix:horizontal lines on charts ... mis-ordering?
-//	  - [X] fix:verticl lines on charts from taking log of near-zero difference
-//	      - [X] use stats to report likelihood of correctness of recording given negative difference
-//	      - [X] convert negative difference to negative infinity dB
-//	  - [ ] fix:does not terminate when window closed
-//	  - [X] fix: result has artefacts ... low-pass filter?  alignment? longer recordings?
-//	      -> could be helpful to enable toolbar for point inspection
-//	      -> this was due to a calculation error, and a spurious emitter in one recording
-//	         now fixed and detected
+//   - either loads two hists of same env and plots emitter
+//     or loads 4 hists of 2 envs and determines emitter change between envs
+//  - [X] accept args:
+//    --e1 1bg.noisep 1emit.noisep
+//    --e2 2bg.noisep 2emit.noisep
+//  - [X] verify that one emitter is enabled in emit
+//  - [X] verify that same emitter is enabled in both passes
+//  - [X] plot emitter curves
+//  - [X] plot difference curve
+//  - [X] test for compile-time errors of emitter plotting
+//  - [X] test for compile-time errors of difference plotting
+//  - [X] test for run-time errors
+//    - [X] fix:horizontal lines on charts ... mis-ordering?
+//    - [X] fix:verticl lines on charts from taking log of near-zero difference
+//        - [X] use stats to report likelihood of correctness of recording given negative difference
+//        - [X] convert negative difference to negative infinity dB
+//    - [X] fix:does not terminate when window closed
+//    - [X] fix: result has artefacts ... low-pass filter?  alignment? longer recordings?
+//        -> could be helpful to enable toolbar for point inspection
+//        -> this was due to a calculation error, and a spurious emitter in one recording
+//           now fixed and detected
 
 ////////
 // 2018-01-03: another attempt

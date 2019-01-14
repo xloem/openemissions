@@ -258,7 +258,7 @@ public:
   StatsDistributionChiSquared(Scalar dof)
   : StatsDistributionByMeasures<T, StatsDistributionChiSquared<T, OPTIONS>, OPTIONS>(dof, 2 * dof, 12/dof + 3),
     _dof(dof),
-    _halfDof(dof)
+    _halfDof(dof/2)
   { };
 
   /*
