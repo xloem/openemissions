@@ -27,6 +27,20 @@
 ////////
 // 2018-01-13: another attempt.  resolving distribution subtraction seemed a bit of a frazzling point -- let's skip it for now
 // - [X] make 2-2-plot-diff
+// - [ ] BUGFIX: SE should be quotient, not difference
+//            http://www.stat.cmu.edu/~hseltman/files/ratio.pdf
+//            Var(R/S) = Mean(R)^2/Mean(S)^2 * (Var(R)/Mean(R)^2 - 2 * Cov(R,S)/(Mean(R)*Mean(S)) + Var(S)/Mean(S)^2)
+//            Given that R = a * S, what is Cov(R,S)?
+//                Cov(R,S) = 1/n sum((Ri - Mean(R))(S_i - Mean(S)))
+//                Cov(R,S) = a/n sum((Si - Mean(S))(S_i - Mean(S)))
+//                         = a * Var(S)
+//                         = Mean(R) / Mean(S) * Var(S)
+//            Var(R/S) = Mean(R)^2/Mean(S)^2 * (Var(R)/Mean(R)^2 - 2 * Var(S) * Mean(R) / Mean(S)/(Mean(R)*Mean(S)) + Var(S)/Mean(S)^2)
+//            Var(R/S) = Mean(R)^2/Mean(S)^2 * (Var(R)/Mean(R)^2 - 2 * Var(S) / Mean(S)^2 + Var(S)/Mean(S)^2)
+//            Var(R/S) = Mean(R)^2/Mean(S)^2 * (Var(R)/Mean(R)^2 - Var(S)/Mean(S)^2)
+//            Var(R/S) = Mean(R)^2 * (Var(R) * Mean(S)^2/Mean(R)^2 - Var(S))
+//                         
+// - [ ] BUGFIX: adjustments for values too small should be done in chart, not data, to retain information
 //   - either loads two hists of same env and plots emitter
 //     or loads 4 hists of 2 envs and determines emitter change between envs
 //  - [X] accept args:

@@ -95,6 +95,7 @@ public:
     tick();
     if (_shielded)
     {
+      throw std::logic_error("SE is coded to difference but should be quotient");
       _seP.set(_shielded->profile(), _unshielded->profile());
       _seChart.reset(new RootChartProfile<BriefDiffProfile>("Shielding Effectiveness"));
       _seChart->pad() = _sePad;
@@ -151,6 +152,7 @@ private:
             {
               unexpectedEmitterSignificance *= fg.distribution(freq).deviationSignificance(bgMag);
             }
+            continue;
           }
           else if (mag - err < min || min == 0)
           {
