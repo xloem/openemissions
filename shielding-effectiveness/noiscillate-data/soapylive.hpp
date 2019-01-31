@@ -18,8 +18,7 @@ public:
   SoapyLive(const char * deviceStr, Scalar dB, Scalar sampleRate, Scalar settleSecs = 0.0625)
   : _device(SoapySDR::Device::make(deviceStr)),
     _settleSecs(settleSecs),
-    _skip(0),
-    _sampleTime(0)
+    _skip(0)
   {
     _device->setGainMode(SOAPY_SDR_RX, 0, false);
     
@@ -30,6 +29,8 @@ public:
     std::cerr << "WARNING: hardcoded to 8 bits for RTL-SDR." << std::endl;
     std::cerr << "         precision will be lost from better radios." << std::endl;
     _stream = _device->setupStream(SOAPY_SDR_RX, "CS8", {0}/*, {{"bufflen", "1048576"}}*/);
+
+    _device->setHardwareTime(0);
 
     if (_device->activateStream(_stream) != 0)
     {
@@ -95,32 +96,27 @@ public:
       {
         std::cerr << "device timeout" << std::endl;
         vec.derived().conservativeResize(0);
-        meta.sampleTime = _sampleTime;
         return;
       }
       else */if (result < 0)
       {
         throw std::runtime_error(std::string("SoapySDR: ") + SoapySDR::errToStr(result));
       }
-      _sampleTime += result;
       _skip -= result;
     }
 
     _buf.resize(2 * _vec.size());
     void * buf = _buf.data();
 
-   // SoapyRTLSDR drops buffers when tuning, so we don't actually know the sample time.
-    meta.sampleTime = ~0;//_sampleTime;
-
     // TODO: use global cast function to skip some of this extra stuff
     int count = _device->readStream(_stream, &buf, _vec.size(), flags, timeNs, 10000000);
     if (count < 0) throw std::runtime_error(std::string("stream read error: ") + SoapySDR::errToStr(count));
+    meta.sampleTime = SoapySDR::timeNsToTicks(timeNs);
     Eigen::Map<Eigen::Array<int8_t, 2, Eigen::Dynamic>> eigenRawData(&_buf[0], 2, count);
     auto eigenScalarData = (eigenRawData.cast<Scalar>() + 0.5) / 127.5;
     vec.derived().conservativeResize(eigenScalarData.cols());
     vec.real() = eigenScalarData.row(0);
     vec.imag() = eigenScalarData.row(1);
-    _sampleTime += vec.size();
   }
 
   static constexpr Scalar epsilon() {
@@ -146,7 +142,6 @@ private:
   Scalar _rate;
   Scalar _gain;
   Scalar _freq;
-  uint64_t _sampleTime;
   uint64_t _skip;
 
   std::vector<int8_t> _buf;
