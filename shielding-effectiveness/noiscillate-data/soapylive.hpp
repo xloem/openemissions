@@ -7,6 +7,7 @@
 
 #include <SoapySDR/Device.hpp>
 #include <SoapySDR/Errors.hpp>
+#include <SoapySDR/Time.hpp>
 #include <SoapySDR/Version.hpp>
 
 #include <TSystem.h>
@@ -111,7 +112,7 @@ public:
     // TODO: use global cast function to skip some of this extra stuff
     int count = _device->readStream(_stream, &buf, _vec.size(), flags, timeNs, 10000000);
     if (count < 0) throw std::runtime_error(std::string("stream read error: ") + SoapySDR::errToStr(count));
-    meta.sampleTime = SoapySDR::timeNsToTicks(timeNs);
+    meta.sampleTime = SoapySDR::timeNsToTicks(timeNs, _rate);
     Eigen::Map<Eigen::Array<int8_t, 2, Eigen::Dynamic>> eigenRawData(&_buf[0], 2, count);
     auto eigenScalarData = (eigenRawData.cast<Scalar>() + 0.5) / 127.5;
     vec.derived().conservativeResize(eigenScalarData.cols());
