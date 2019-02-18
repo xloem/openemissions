@@ -3202,8 +3202,8 @@ int main(int argc, char const * const * argv)
   //WaveformModelStatsAccumulator<StatsAccumulatorHistogram<Scalar>, STATS_STANDARD_DEVIATION> initialModel({data.epsilon()}, SAMPLERATE / Scalar(FREQ_GUESS - FREQ_GUESS_ERROR));
   //WaveformModelStatsAccumulator<StatsAccumulatorNormal<Scalar>, STATS_STANDARD_DEVIATION> initialModel({}, SAMPLERATE / Scalar(FREQ_GUESS - FREQ_GUESS_ERROR));
 
-  ProcessorNoiseProfile<Scalar, StatsAccumulatorHistogram<Scalar>, STATS_VARIANCE> processor(file1, {data.epsilon()});
-  //PeriodProcessorDetectKnownCorrelate<Scalar, decltype(initialModel), FFTCorrelationFunctor<Scalar>> processor(initialModel, SAMPLERATE / Scalar(FREQ_GUESS), {}, Scalar(SAMPLERATE) * 60 * 60 * 24 * 365.25 * 100);
+  //ProcessorNoiseProfile<Scalar, StatsAccumulatorHistogram<Scalar>, STATS_VARIANCE> processor(file1, {data.epsilon()});
+  PeriodProcessorDetectKnownCorrelate<Scalar, decltype(initialModel), FFTCorrelationFunctor<Scalar>> processor(initialModel, SAMPLERATE / Scalar(FREQ_GUESS), {}, Scalar(SAMPLERATE) * 60 * 60 * 24 * 365.25 * 100);
   //PeriodProcessorConvolveDownsample<Scalar> processor(SAMPLERATE / (FREQ_GUESS + FREQ_GUESS_ERROR) - 1, SAMPLERATE / (FREQ_GUESS - FREQ_GUESS_ERROR) + 1, SAMPLERATE / (FREQ_GUESS) / 6);
   DataFeeder<Scalar, decltype(data), decltype(processor)> feeder(data, processor);
 
@@ -3271,10 +3271,10 @@ int main(int argc, char const * const * argv)
       auto secs = std::chrono::duration_cast<std::chrono::seconds>(remainingTime);
       std::cerr.fill('0');
       std::cerr << "Tuned to: " << curFreq_it->freq << " Hz (" << percentDone*100 << "% ETA: " << std::setw(2) << hrs.count() << ":" << std::setw(2) << mins.count() << ":" << std::setw(2) << secs.count() << ")" << std::endl;
-      //std::cerr << "Periods: " << lastPeriods << std::endl;
-      //std::cerr << "Wavelength Avg: " << processor.bestPeriod() / double(SAMPLERATE) << std::endl;
-      //std::cerr << "Frequency Avg: " << double(SAMPLERATE) * processor.bestFrequency() << std::endl;
-      //std::cerr << "Wavelength STD: " << sqrt(processor.periodVariance()) / double(SAMPLERATE) << std::endl;
+      std::cerr << "Periods: " << lastPeriods << std::endl;
+      std::cerr << "Wavelength Avg: " << processor.bestPeriod() / double(SAMPLERATE) << std::endl;
+      std::cerr << "Frequency Avg: " << double(SAMPLERATE) * processor.bestFrequency() << std::endl;
+      std::cerr << "Wavelength STD: " << sqrt(processor.periodVariance()) / double(SAMPLERATE) << std::endl;
       /*
          std::cerr << "Best significance so far: " << periodFinder.bestPeriod() << " (" << Scalar(SAMPLERATE) / periodFinder.bestPeriod() << " Hz " << periodFinder.bestSignificance()*100 << " %)" << std::endl;
          std::cerr << "                          " << periodFinder.bestPeriod2() << " (" << Scalar(SAMPLERATE) / periodFinder.bestPeriod2() << " Hz " << periodFinder.bestSignificance2()*100 << " %)" << std::endl;
@@ -3316,7 +3316,7 @@ int main(int argc, char const * const * argv)
         std::cout << std::endl;
       }
       data.tune(curFreq_it->freq);
-      processor.write();
+      //processor.write();
     }
   }
   /*
