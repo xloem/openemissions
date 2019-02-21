@@ -3176,10 +3176,12 @@ int main(int argc, char const * const * argv)
   //            rotation = 25943
   // 4. - [ ] fix period integration to not include background noise
 
+  /*
   std::string file1, file2;
   if (argc < 2) return -1;
   file1 = argv[1];
   if (argc > 2) file2 = argv[2];
+  */
 
   //RtlSdrIQDump data(std::cin);
   
@@ -3199,8 +3201,8 @@ int main(int argc, char const * const * argv)
   constexpr Scalar BUFFERS_PER_SEC = SAMPLERATE / double(FFT_BUFFERSIZE);
   //PeriodFinderFFT<Scalar> periodFinder(SAMPLERATE / (FREQ_GUESS * 2) + 2, FFT_BUFFERSIZE * DOWNSAMPLING / 5 - 2, FFT_BUFFERSIZE, DOWNSAMPLING);
 
-  //WaveformModelStatsAccumulator<StatsAccumulatorHistogram<Scalar>, STATS_STANDARD_DEVIATION> initialModel({data.epsilon()}, SAMPLERATE / Scalar(FREQ_GUESS - FREQ_GUESS_ERROR));
-  //WaveformModelStatsAccumulator<StatsAccumulatorNormal<Scalar>, STATS_STANDARD_DEVIATION> initialModel({}, SAMPLERATE / Scalar(FREQ_GUESS - FREQ_GUESS_ERROR));
+  WaveformModelStatsAccumulator<StatsAccumulatorHistogram<Scalar>, STATS_VARIANCE> initialModel({data.epsilon()}, SAMPLERATE / Scalar(FREQ_GUESS - FREQ_GUESS_ERROR));
+  //WaveformModelStatsAccumulator<StatsAccumulatorNormal<Scalar>, STATS_VARIANCE> initialModel({}, SAMPLERATE / Scalar(FREQ_GUESS - FREQ_GUESS_ERROR));
 
   //ProcessorNoiseProfile<Scalar, StatsAccumulatorHistogram<Scalar>, STATS_VARIANCE> processor(file1, {data.epsilon()});
   PeriodProcessorDetectKnownCorrelate<Scalar, decltype(initialModel), FFTCorrelationFunctor<Scalar>> processor(initialModel, SAMPLERATE / Scalar(FREQ_GUESS), {}, Scalar(SAMPLERATE) * 60 * 60 * 24 * 365.25 * 100);
@@ -3274,7 +3276,7 @@ int main(int argc, char const * const * argv)
       std::cerr << "Periods: " << lastPeriods << std::endl;
       std::cerr << "Wavelength Avg: " << processor.bestPeriod() / double(SAMPLERATE) << std::endl;
       std::cerr << "Frequency Avg: " << double(SAMPLERATE) * processor.bestFrequency() << std::endl;
-      std::cerr << "Wavelength STD: " << sqrt(processor.periodVariance()) / double(SAMPLERATE) << std::endl;
+      //std::cerr << "Wavelength STD: " << sqrt(processor.periodVariance()) / double(SAMPLERATE) << std::endl;
       /*
          std::cerr << "Best significance so far: " << periodFinder.bestPeriod() << " (" << Scalar(SAMPLERATE) / periodFinder.bestPeriod() << " Hz " << periodFinder.bestSignificance()*100 << " %)" << std::endl;
          std::cerr << "                          " << periodFinder.bestPeriod2() << " (" << Scalar(SAMPLERATE) / periodFinder.bestPeriod2() << " Hz " << periodFinder.bestSignificance2()*100 << " %)" << std::endl;
