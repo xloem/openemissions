@@ -8,7 +8,6 @@
 #include <vector>
 
 
-
 class RtlSdr : public Source, public DriverThread<std::vector<uint8_t>>
 {
 friend class RtlSdrType;
