@@ -45,3 +45,21 @@ decomposition.
 - [ ] plot waveform details as if period were known
 	- [ ] choose whether to make a new project, or continue an old
 		- [ ] identify existing work in this repository
+
+
+emap:
+	c++
+	has existing work for period finding, early
+	uses multiple windows right now
+	links stright to rtlsdr
+	homebrew UI and routing system
+	likely was first attempt at this work
+freesdr:
+	c++
+	minimal work for period finding
+	barely-started pluggable design using pothos
+noiscillate-data:
+	c++
+	unreviewed, appears to have extensive period finding work
+
+
