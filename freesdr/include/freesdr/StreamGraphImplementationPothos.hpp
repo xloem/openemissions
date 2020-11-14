@@ -22,6 +22,7 @@ public:
     );
   }
 
+  // it looks like this is a pothosblock with n streams of specific compiletime types
   template <typename _FreeSDRBlock, typename... _StreamTypes>
   class Block : public Pothos::Block
   {
@@ -206,6 +207,9 @@ private:
   template <typename FreeSDRBlock, typename... StreamTypes>
   friend class Block;
 
+  template <typename Block, std::size_t idx>
+  static void fillBufferBeforeWork(Block & block, std::size_t inputIdx, std::size_t outputIdx);
+
   template <typename Block, std::size_t... streamIdxs>
   static void fillBuffersBeforeWork(Block & block, std::size_t inputIdx, std::size_t outputIdx);
 
@@ -213,10 +217,10 @@ private:
   static void sendBuffersAfterWork(Block & block, std::size_t inputIdx, std::size_t outputIdx);
 };
 
-template <typename Block, std::size_t idx, std::size_t... rest>
-void StreamGraphImplementationPothos::fillBuffersBeforeWork<Block, idx, rest...>(Block & block, std::size_t inputIdx, std::size_t outputIdx)
+template <typename _Block, std::size_t idx>
+void StreamGraphImplementationPothos::fillBufferBeforeWork(_Block & block, std::size_t inputIdx, std::size_t outputIdx)
 {
-  using StreamType = typename std::tuple_element<idx, typename Block::StreamTypes>;
+  using StreamType = typename std::tuple_element<idx, typename _Block::StreamTypes>;
   using Element = typename StreamType::Type;
   //using Buffer = typename FreeSDRBlock::template Buffer<StreamType>;
   using Matrix = LinAlgImplementation::template Matrix<Element>;
@@ -261,8 +265,8 @@ void StreamGraphImplementationPothos::fillBuffersBeforeWork<Block, idx, rest...>
   fillBuffersBeforeWork<rest...>(inputIdx, outputIdx);
 }
 
-template <typename Block>
-void StreamGraphImplementationPothos::fillBuffersBeforeWork<>(Block & block, std::size_t inputIdx, std::size_t outputIdx) {}
+template <typename _Block>
+void StreamGraphImplementationPothos::fillBuffersBeforeWork<>(_Block & block, std::size_t inputIdx, std::size_t outputIdx) {}
 
 template <typename Block, std::size_t idx, std::size_t... rest>
 void StreamGraphImplementationPothos::sendBuffersAfterWork<idx, rest...>(Block & block, std::size_t inputIdx, std::size_t outputIdx)
