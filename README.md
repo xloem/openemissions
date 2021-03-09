@@ -21,3 +21,5 @@ Links:
   - Wikipedia article on TEMPEST: https://en.wikipedia.org/wiki/Tempest_(codename)
   - openemissions repo on gitlib: https://gitlab.com/xloem/openemissions
   - openemissions repo on github: https://github.com/xloem/openemissions
+  - there is an openemissions wiki on github that needs to be merged into the repo so its history is kept on git: https://github.com/xloem/openemissions/wiki git history at https://github.com/xloem/openemissions.wiki .  README.md could be turned into a symlink to home, and the repository contents shared?
+  - i believe there is also a gitlab wiki
