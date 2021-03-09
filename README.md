@@ -5,6 +5,8 @@ and providing tools to aid in experimenting with and understanding electromagnet
 
 This project was started by Karl Semich (xloem), who does not have any professional or academic experience in this area, but is passionate about it.
 
+The github repository here is configured to allow automatic merging of pull requests.  This must be activated in the pull request UI.
+
 Project ideas:
 - consolidated public resources for making shielded spaces
 - consolidated indexes of known security issues
@@ -17,3 +19,5 @@ Project ideas:
 
 Links:
   - Wikipedia article on TEMPEST: https://en.wikipedia.org/wiki/Tempest_(codename)
+  - openemissions repo on gitlib: https://gitlab.com/xloem/openemissions
+  - openemissions repo on github: https://github.com/xloem/openemissions
