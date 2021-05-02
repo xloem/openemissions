@@ -1,0 +1,33 @@
+
+note:
+	-> adaptive subdivision to pick angles, starting near origin for speed
+	-> blind source separation to separate signals
+			need some heuristic/approach here to only use constant signals
+			if recordings are at different times.  could use multiple gymbals.
+		-> the blind source separation on constant signals will form a spherical antenna
+		   function that can be used to transform data.  each signal ideally would sample
+		   this antenna function in its mixing/unmixing vector.  so after BSS of many
+		   signals, the mixing/unmixing vectors would ideally be alignable to form
+		   a detailed antenna function.  then as signals are counted they can be precisely
+		   unmixed by procedurally forming mixing matrices based on the known properties
+		   and a detailed image of the room mapped.
+			-> if it works, this approach might be integratable into a bss system to
+			   reduce needed recordings from the start.
+
+1. plug the nyansat motor controller and imu into the I2C pins of a raspberry pi
+   the esp32 is unneeded.
+
+2. git clone https://github.com/xloem/antenny
+the nyansat/station subfolder has been ported to mainstream python using the circuitpython libraries
+
+3. cd nyansat/station; python3
+
+4. import antenny
+   api = esp32_antenny.antenna_api_factory() # todo: rename from esp32
+   calibration = api.pwm_calibration()
+
+hw notes:
+	a robotic arm kit on aliexpress uses servos RDS3115MG DS3115MG; is this the same?
+	far better precision could be obtained by calibrating continuous-rotation servos,
+	somebody used tower pro mg995.  it might also be possible to 'nudge' the servos and depower
+	them quickly, for precision.
