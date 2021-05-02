@@ -10,3 +10,7 @@
 [submodule "emap/dependencies/readerwriterqueue"]
 	path = emap/dependencies/readerwriterqueue
 	url = https://github.com/cameron314/readerwriterqueue
+[submodule "nyanmap/antenny"]
+	path = nyanmap/antenny
+	url = https://github.com/xloem/antenny.git
+	branch = raspberrypi

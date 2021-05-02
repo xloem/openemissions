@@ -15,7 +15,7 @@ note:
 			   reduce needed recordings from the start.
 
 1. plug the nyansat motor controller and imu into the I2C pins of a raspberry pi
-   the esp32 is unneeded.
+   the esp32 is unneeded and slows the build-test loop.
 
 2. git clone https://github.com/xloem/antenny
 the nyansat/station subfolder has been ported to mainstream python using the circuitpython libraries
