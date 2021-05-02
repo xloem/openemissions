@@ -1,9 +1,15 @@
 # freesdr
 
-Some reusable work towards working with signals, intended to be very generic but with a focus on Pothos and ROOT.
+Some reusable work towards working with signals, intended to be very generic.
 
-Why Pothos?
+
+Focuses:
+
+GnuRadio:
+  - this task is difficult enough that supporting any issues near the gnu community is actually easier than completing it
+
+Pothos: (deprecated, less ideal philosophy than gnu)
   - the rtl-sdr libraries are hosted on github (osmosdr uses a private system) and the maintainer is responsive, making contribution more accessible
 
-Why ROOT?
-  - it provids a gateway to powerful analysis of information
+ROOT: (possibly on hold, is rather heavy weight, not used by radio devs much)
+  - it provides a gateway to powerful analysis of information

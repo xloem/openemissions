@@ -1,0 +1,65 @@
+# What is noiscillate
+
+Noiscillate is a hobby prototype idea for cheaply measure the attenuation of
+shielding by using a noise source on a relay that oscillates it.  The receiver
+discerns the rate of oscillation and compares the active data to the inactive
+data to guess the attenuation.
+
+# Theory prototype 1: oscillating noise source
+
+I'm not the smartest, so it's best to try things to get smarter.
+
+Noise source emits EM signal noise function, which at the receiver is present
+as Rn(t).  This signal oscillates in what is roughly a square wave, for example
+with a relay.
+
+During inactive time, receiver receives only Rb(t) the background signal.
+
+During active time, receiver receives Rb(t) + Rn(t) = Rr(t).
+
+When the signal is weak, heuristics can't differentiate between active and
+inactive time periods.  So, we separate the problem of keeping the receiver in
+sync with the emitter from that of measuring the signal, and compare the
+probability distributions of the active and inactive timeperiods to discern the
+strength of Rn(t).  Now, summation over time can be used to increase sensitivity
+if the signal is very weak.
+
+First, estimate the probability distribution of Rn(t) from our observations of
+the probability distributions of Rr(t) and Rb(t), possibly using e.g. the
+convolution theorem for the sum of two independent random variables, which is
+not complex.
+
+Then, discern mean electromagnetic properties such as relative power by solving
+from the distribution of Rn(t).
+
+# Prototype Part 1a: Plotting of a waveform for review
+
+Given a guess as to the period of the signal, plot the accumulated shape
+visually, as if an oscilloscope had a trigger set for it.  Each time point in
+the plot would be a fully colored column, like in a spectrogram, but of the
+frequency of occurrences of different signal powers, rather than spectral
+decomposition.
+
+# TODOs
+
+- [ ] plot waveform details as if period were known
+	- [ ] choose whether to make a new project, or continue an old
+		- [ ] identify existing work in this repository
+
+
+emap:
+	c++
+	has existing work for period finding, early
+	uses multiple windows right now
+	links stright to rtlsdr
+	homebrew UI and routing system
+	likely was first attempt at this work
+freesdr:
+	c++
+	minimal work for period finding
+	barely-started pluggable design using pothos
+noiscillate-data:
+	c++
+	unreviewed, appears to have extensive period finding work
+
+

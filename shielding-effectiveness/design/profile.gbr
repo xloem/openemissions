@@ -1,0 +1,62 @@
+G04
+
+gerber file, easy to read
+
+this is a 'profile' file, required, defines the physical extent of the pcb
+
+each gerber file is one 'layer' of a pcb, specified by its listed attributes
+full spec at https://www.ucamco.com/files/downloads/file_en/416/the-gerber-file-format-specification-revision-2020-09-update_en.pdf
+
+made of block commands and extended commands
+block commands have a code of G,D,or M and are ended by an asterisk
+extended commands have 2-character codes and are surrounded by percentage signs
+this text is a comment (G04 spec 4.1) and they can't include percentage or asterisk signs
+
+I've never printed a pcb before, but I wonder if pcb printing could be used to make
+incredibly tiny holes in copper in a way useful for an air vent.
+
+NOTE: specpage 121, 4.14 numerical accuracy, says precision goes to +- 0.5 micrometers.
+      additionally, the output device must state its accuracy.
+*
+
+G04
+sets the coordinate format and resolution (FSLA; the LA is for legacy compatibility)
+to 2 integer digits and a maximum of 6 fractional digits
+(X and Y must be equal, fract digits must be 5 or 6)
+*
+%FSLAX26Y26*%
+
+
+G04 required, sets file attribute (TF spec 5.2) to specify file function
+    Copper is copper layer
+    Plated is plated drill/rout data
+    NonPlated is non-plated drill/rout data
+    Profile is board proflie or outline
+    Soldermask is solder resist
+    Legend is silkscreen
+    Component is component information
+    Paste is solder paste locations
+    Glue is glue spots to fix components prior to soldering
+    Carbonmask,Goldmask,Heatsinkmask,Peelablemask,Silvermask,Tinmask are like Soldermask
+    Depthrout is routing information that does not pass though the board
+    Vcut is score lines
+    Drillmap is a drawing with drill locations
+*
+%TF.FileFunction,Profile*%
+
+G04 required, sets that the image represents the presence (Positive) of material.
+    drill files are positive.
+    solder mask files are negative.*
+%TF.FilePolarity,Positive*%
+
+G04 required, specifies that all coordinates are aligned for the 'test' dataset*
+%TF.SameCoordinates,test*%
+
+G04 sets the unit (MO) to millimeters (MM); inches (IN) are deprecated*
+%MOMM*%
+
+G04 profile must be defined by a contour (G36/G37 4.10.1)*
+G04 -------------------------TODO------------------------*
+
+G04 end the file*
+M02*

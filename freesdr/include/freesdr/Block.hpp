@@ -173,7 +173,10 @@ class Block
   using StreamGraphImplementation = _StreamGraphImplementation;
   using LinAlgImplementation = _LinAlgImplementation;
   using BlockImplementation = typename StreamGraphImplementation::template Block<_StreamTypes...>;
+  using StreamTypes = typename std::tuple<_StreamTypes...>
+
   friend BlockImplementation;
+
 public:
   template <typename StreamType>
   using Buffer = freesdr::Buffer<Block, StreamType>;
@@ -181,6 +184,8 @@ public:
   using InputBuffer = Buffer<StreamType<Element, SD_INPUT, chans>>;
   template <typename Element, std::size_t chans = 1>
   using OutputBuffer = Buffer<StreamType<Element, SD_OUTPUT, chans>>;
+
+
 protected:
   Block()
   : platform(*this)
