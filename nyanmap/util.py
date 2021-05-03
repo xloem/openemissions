@@ -3,25 +3,30 @@ import numpy as np
 # wraps an ndarray providing for in-place addition of rows
 class npflexarray:
     def __init__(self, array = None):
-        self.array = None
+        self._array = None
+        self._view = None
         self.len = 0
         if array is not None:
             self.extend(array)
     def extend(self, more):
-        if self.array is None:
-            self.array = np.array(more)
+        if self._array is None:
+            self._array = np.array(more)
+            self._view = self._array
             self.len = len(more)
             return
         newlen = self.len + len(more)
-        if newlen >= len(self.array):
+        if newlen >= len(self._array):
             # double size of array
-            self.array = np.append(self.array, self.array, axis=0)
-        self.array[self.len:newlen] = more
+            self._array = np.append(self._array, self._array, axis=0)
+        self._array[self.len:newlen] = more
+        self._view = self._array[:newlen]
         self.len = newlen
+    def array(self):
+        return self._view
     def __getattr__(self, name):
-        return getattr(self.array, name)
+        return getattr(self._view, name)
     def __getitem__(self, idx):
-        return self.array[idx]
+        return self._view[idx]
     def __len__(self):
         return self.len
 
