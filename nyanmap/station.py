@@ -28,14 +28,21 @@ class Station:
                 raise e
         if self.antenny.is_safemode():
             raise Exception('Failed to initialise motor driver')
+
+        self.controllers = [self.antenny.antenna.elevation, self.antenny.antenna.azimuth]
+
         self.min = []
         self.max = []
-        for controller in (self.antenny.antenna.elevation, self.antenny.antenna.azimuth):
+        self.last = []
+        for controller in self.controllers:
             self.min.append(controller.motor.min_duty)
             self.max.append(controller.motor.max_duty)
+            self.last.append(controller.get_duty())
         self.min = np.array(self.min)
         self.max = np.array(self.max)
+        self.last = np.array(self.last)
     def write_event(self, dutyvec):
+        self.last = dutyvec
         self.antenny.antenna.elevation.set_duty(dutyvec[0])
         self.antenny.antenna.azimuth.set_duty(dutyvec[1])
 
