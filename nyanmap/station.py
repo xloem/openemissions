@@ -73,13 +73,9 @@ class Station:
     
 
 #raspi1.pwm_calibration()
-# i got duty-per-degree azimuth=8 elevation=265
-# but i didn't calibrate the imu first
-# nor verify that the euler angles on the imu were 0 and 2 as hardcoded
-
-# az_duty (az, 0, 1, 0.1)
-# el_duty (el, 2, 1, 0.1)
-
-# i get 3-4 for duty-per-degree by quick observation myself
-# makes a total extent of 164 degrees =S
-
+#  it looks like pwm_calibration assumes azimuth is euler angle 0, and elevation euler angle 2
+#   the imu can be separately calibrated to itself first, it has internal memory for this
+#  pwm_calibration is supposed to return duty-per-degree.  it doesn't look correct to me.
+#  it looks to me like duty-per-degree should be 3-4 for both axes (even though they are differnt
+#   servo models).
+#  for quick use, it makes sense to assume 180-degree extent for either servo
