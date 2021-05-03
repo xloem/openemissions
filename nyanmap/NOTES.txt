@@ -13,6 +13,15 @@ note:
 		   and a detailed image of the room mapped.
 			-> if it works, this approach might be integratable into a bss system to
 			   reduce needed recordings from the start.
+	-> bno055 modes:
+		IMUPLUS_MODE relative-orientation, high data rate, magnetometer disabled
+		NDOF_MODE fused absoloute-orientation
+		NDOF_FMC_OFF_MODE same as NDOF but fast magnetometer calibration off
+	   drivers:
+		~/.local/lib/python3.7/site-packages/adafruit_bno055.py
+	   the bno055 has a uart mode where it won't contend on i2c and might offer continuous data
+	   at a constant rate. this also avoids an old raspberry pi bug with its i2c
+	   clock-stretching.  the device may support spi too.
 
 1. plug the nyansat motor controller and imu into the I2C pins of a raspberry pi
    the esp32 is unneeded and slows the build-test loop.
