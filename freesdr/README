@@ -13,3 +13,4 @@ Pothos: (deprecated, less ideal philosophy than gnu)
 
 ROOT: (possibly on hold, is rather heavy weight, not used by radio devs much)
   - it provides a gateway to powerful analysis of information
+  -> use Tensorflow over ROOT.  Tensorflow is widely developed and very fast.
