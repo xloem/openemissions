@@ -1,0 +1,86 @@
+<?xml version="1.0"?>
+<block>
+  <name>PiGPIO Sink</name>
+  <key>openemissions_pigpio_sink</key>
+  <category>[openemissions]</category>
+  <import>import openemissions</import>
+  <make>openemissions.$(type.fcn)($samp_rate, $pin, $level, $address, $wave_buffer_percent, $hardware_clock_frequency)</make>
+  <!-- Make one 'param' node for every Parameter you want settable from the GUI.
+       Sub-nodes:
+       * name
+       * key (makes the value accessible as $keyname, e.g. in the make node)
+       * type -->
+  <param>
+    <name>Sample Rate</name>
+    <key>samples_per_second</key>
+    <value>samp_rate</value>
+    <type>real</type>
+  </param>
+  <param>
+    <name>Pin</name>
+    <key>pin</key>
+    <value>4</value>
+    <type>unsigned</type>
+  </param>
+  <param>
+    <name>Type</name>
+    <key>type</key>
+    <value>float</value>
+    <type>enum</type>
+    <option>
+        <name>Complex</name>
+        <key>complex</key>
+        <opt>fcn:pigpio_sink_c</opt>
+    </option>
+    <option>
+        <name>Float</name>
+        <key>float</key>
+        <opt>fcn:pigpio_sink_f</opt>
+    </option>
+    <option>
+        <name>Int</name>
+        <key>int</key>
+        <opt>fcn:pigpio_sink_i</opt>
+    </option>
+  <param>
+    <name>Level</name>
+    <key>level</key>
+    <value>0</value>
+    <type>$type</type>
+  </param>
+  <param>
+    <name>pigpiod address:port</name>
+    <key>address</key>
+    <value>127.0.0.1:8888</value>
+    <type>string</type>
+  </param>
+  <param>
+    <name>DMA Buffer Percent per Wave</name>
+    <key>wave_buffer_percent</key>
+    <value>50</value>
+    <type>int</type>
+  </param>
+  <param>
+    <name>Hardware Clock Frequency</name>
+    <key>hardware_clock_frequency</key>
+    <value>30000000</value>
+    <type>unsigned</type>
+  </param>
+  
+  <sink>
+    <name>in</name>
+    <type>$type</type>
+  </sink>
+
+  <doc>
+Run the pigpiod service on a raspberry pi and specify the hostname here to drive a gpio pin.
+
+When the input signal is greater than the value of Level, the pin is set high.
+
+Time resolutions faster than a few microseconds are not reproducible with pigpio,
+so it's probably good to downsample to below 100K sample rate.
+
+Significantly lowering the DMA Buffer Percent per Wave will allow more waves to be queued in flight,
+protecting against buffer underruns, but decrease the amount of data the block can process at once.
+  </doc>
+</block>
