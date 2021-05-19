@@ -45,4 +45,8 @@ cpp_templates:
     declarations: 'blocks::pad_crop::sprt ${id};'
     make: 'this->${id} = blocks::pad_crop::make(${type.size}, ${length}, ${lengthtagname}, ${pad}, ${crop});'
 
+asserts:
+-   ${ pad or crop }
+-   ${ length > 0 }
+
 file_format: 1
