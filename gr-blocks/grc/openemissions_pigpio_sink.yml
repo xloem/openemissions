@@ -4,7 +4,7 @@ category: '[openemissions]'
 
 templates:
     imports: import openemissions
-    make: openemissions.${type.fcn}(${samp_rate}, ${pin}, ${level}, ${address}, ${wave_buffer_percent}, ${hardware_clock_frequency})
+    make: openemissions.pigpio_sink_${type}(${samp_rate}, ${pin}, ${level}, ${address}, ${wave_buffer_percent}, ${hardware_clock_frequency})
 
 parameters:
 -   id: type
@@ -13,8 +13,6 @@ parameters:
     value: float
     options: [complex, float, int]
     option_labels: ["Complex", "Float", "Int"]
-    option_attributes:
-        fcn: [pigpio_sink_c, pigpio_sink_f, pigpio_sink_i]
     hide: part
 -   id: samples_per_second
     label: Sample Rate

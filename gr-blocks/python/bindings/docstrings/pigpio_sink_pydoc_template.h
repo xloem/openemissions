@@ -19,9 +19,6 @@
  static const char *__doc_gr_openemissions_pigpio_sink = R"doc()doc";
 
 
- static const char *__doc_gr_openemissions_pigpio_sink_pigpio_sink = R"doc()doc";
-
-
  static const char *__doc_gr_openemissions_pigpio_sink_make = R"doc()doc";
 
   
