@@ -21,7 +21,7 @@ class pigpio_sink_impl : public pigpio_sink<T>
 private:
   unsigned d_pin;
   T d_level;
-  double d_samples_per_second;
+  double d_sample_rate;
   unsigned d_hardware_clock_frequency;
   int d_wave_buffer_percent;
 
@@ -38,7 +38,7 @@ public:
                    T level,
                    const std::string &address,
                    int wave_buffer_percent,
-                   unsigned hardware_clock_frequency)
+                   int hardware_clock_frequency)
   : gr::sync_block("pigpio_sink",
                    gr::io_signature::make(
                      1 /* min inputs */,
@@ -47,7 +47,7 @@ public:
                    gr::io_signature::make(0, 0, 0)),
     d_pin(0),
     d_level(level),
-    d_samples_per_second(samp_rate),
+    d_sample_rate(samp_rate),
     d_hardware_clock_frequency(0),
     d_wave_buffer_percent(wave_buffer_percent),
     d_accumulated_us(0)
@@ -121,7 +121,7 @@ public:
           pulse.gpioOff = d_pin;
         }
 
-        double target_us = (sample - (double)0.5) * 1000000 / d_samples_per_second;
+        double target_us = (sample - (double)0.5) * 1000000 / d_sample_rate;
         pulse.usDelay = target_us - last_us;
         d_accumulated_us += pulse.usDelay;
         last_us = target_us;
@@ -156,14 +156,14 @@ public:
     return d_level;
   }
 
-  void set_samples_per_second(double samples_per_second)
+  void set_sample_rate(double sample_rate)
   {
-    d_samples_per_second = samples_per_second;
+    d_sample_rate = sample_rate;
   }
 
-  double samples_per_second() const
+  double sample_rate() const
   {
-    return d_samples_per_second;
+    return d_sample_rate;
   }
 
   void set_address(const std::string &address)
@@ -276,7 +276,7 @@ private:
     }
   }
 
-  void set_hw(unsigned pin, const std::string &address, unsigned hardware_clock_frequency)
+  void set_hw(int pin, const std::string &address, unsigned hardware_clock_frequency)
   {
     if (d_server) {
       if (pin != d_pin || address != this->address()) {

@@ -47,8 +47,8 @@ public:
   virtual void set_level(T level) = 0;
   virtual T level() const = 0;
 
-  virtual void set_samples_per_second(double samples_per_second) = 0;
-  virtual double samples_per_second() const = 0;
+  virtual void set_samples_rate(double samples_per_second) = 0;
+  virtual double samples_rate() const = 0;
 
   virtual void set_address(const std::string &address) = 0;
   virtual const std::string &address() const = 0;

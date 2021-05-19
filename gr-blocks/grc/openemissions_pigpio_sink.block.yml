@@ -4,42 +4,56 @@ category: '[openemissions]'
 
 templates:
     imports: import openemissions
-    make: openemissions.pigpio_sink_${type}(${samp_rate}, ${pin}, ${level}, ${address}, ${wave_buffer_percent}, ${hardware_clock_frequency})
+    make: openemissions.pigpio_sink_${type}(${samples_per_second}, ${pin}, ${level}, ${address}, ${wave_buffer_percent}, ${hardware_clock_frequency})
+    callbacks:
+    - set_sample_rate(${samples_per_second})
+    - set_pin(${pin})
+    - set_level(${level})
+    - set_address(${address})
+    - set_wave_buffer_percent(${wave_buffer_percent})
+    - set_hardware_clock_frequency(${hardware_clock_frequency})
 
 parameters:
 -   id: type
     label: Input Type
     dtype: enum
-    value: float
-    options: [complex, float, int]
-    option_labels: ["Complex", "Float", "Int"]
+    default: float
+    options: [complex, float, int, short, byte]
+    option_labels: ["Complex", "Float", "Int", "Short", "Byte"]
+    option_attributes:
+        size: [gr.sizeof_gr_complex, gr.sizeof_float, gr.sizeof_int, gr.sizeof_short, gr.sizeof_char]
     hide: part
 -   id: samples_per_second
     label: Sample Rate
     dtype: real
-    value: samp_rate
+    default: samp_rate
     hide: part
+-   id: vlen
+    label: Vec Length
+    dtype: int
+    default: '1'
+    hide: ${ 'part' if vlen == 1 else 'none' }
 -   id: pin
     label: Pin
-    value: '4'
-    dtype: unsigned
+    default: '4'
+    dtype: int
 -   id: level
     label: Level
-    value: '0'
+    default: '0'
     dtype: ${ type }
 -   id: address
-    label: pigpiod address:port
-    value: 127.0.0.1:8888
+    label: pigpiod
+    default: 127.0.0.1:8888
     dtype: string
 -   id: wave_buffer_percent
     label: DMA Buffer Percent per Wave
-    value: '50'
+    default: '50'
     dtype: int
     category: Advanced
 -   id: hardware_clock_frequency
     label: Hardware Clock Frequency
-    value: '30000000'
-    dtype: unsigned
+    default: '30000000'
+    dtype: int
     category: Advanced
   
 #  Make one 'inputs' list entry per input and one 'outputs' list entry per output.
@@ -53,6 +67,10 @@ inputs:
 -   label: Input
     domain: stream
     dtype: ${ type }
+    vlen: ${ vlen }
+
+asserts:
+- ${ vlen > 0 }
     
 documentation: |-
     Run the pigpiod service on a raspberry pi and specify the hostname here to drive a gpio pin.

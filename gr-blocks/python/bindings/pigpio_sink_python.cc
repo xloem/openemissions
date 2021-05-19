@@ -69,4 +69,6 @@ void bind_pigpio_sink(py::module& m)
     bind_pigpio_sink_template<gr_complex>(m, "pigpio_sink_complex");
     bind_pigpio_sink_template<float>(m, "pigpio_sink_float");
     bind_pigpio_sink_template<int>(m, "pigpio_sink_int");
+    bind_pigpio_sink_template<short>(m, "pigpio_sink_short");
+    bind_pigpio_sink_template<char>(m, "pigpio_sink_byte");
 }
