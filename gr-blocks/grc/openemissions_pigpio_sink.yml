@@ -1,0 +1,70 @@
+id: openemissions_pigpio_sink
+label: PiGPIO Sink
+category: '[openemissions]'
+
+templates:
+    imports: import openemissions
+    make: openemissions.${type.fcn}(${samp_rate}, ${pin}, ${level}, ${address}, ${wave_buffer_percent}, ${hardware_clock_frequency})
+
+parameters:
+-   id: type
+    label: Input Type
+    dtype: enum
+    value: float
+    options: [complex, float, int]
+    option_labels: ["Complex", "Float", "Int"]
+    option_attributes:
+        fcn: [pigpio_sink_c, pigpio_sink_f, pigpio_sink_i]
+    hide: part
+-   id: samples_per_second
+    label: Sample Rate
+    dtype: real
+    value: samp_rate
+    hide: part
+-   id: pin
+    label: Pin
+    value: '4'
+    dtype: unsigned
+-   id: level
+    label: Level
+    value: '0'
+    dtype: ${ type }
+-   id: address
+    label: pigpiod address:port
+    value: 127.0.0.1:8888
+    dtype: string
+-   id: wave_buffer_percent
+    label: DMA Buffer Percent per Wave
+    value: '50'
+    dtype: int
+    category: Advanced
+-   id: hardware_clock_frequency
+    label: Hardware Clock Frequency
+    value: '30000000'
+    dtype: unsigned
+    category: Advanced
+  
+#  Make one 'inputs' list entry per input and one 'outputs' list entry per output.
+#  Keys include:
+#      * label (an identifier for the GUI)
+#      * domain (optional - stream or message. Default is stream)
+#      * dtype (e.g. int, float, complex, byte, short, xxx_vector, ...)
+#      * vlen (optional - data stream vector length. Default is 1)
+#      * optional (optional - set to 1 for optional inputs. Default is 0)
+inputs:
+-   label: Input
+    domain: stream
+    dtype: ${ type }
+    
+documentation: |-
+    Run the pigpiod service on a raspberry pi and specify the hostname here to drive a gpio pin.
+    
+    The pin is set high if and only if the input signal is greater than the value of Level.
+    
+    Time resolutions faster than a few microseconds are not reproducible with pigpio,
+    so it's probably good to downsample to below 100K sample rate.
+    
+    Significantly lowering the DMA Buffer Percent per Wave will allow more waves to be queued in flight,
+    protecting against buffer underruns, but decrease the amount of data the block can process at once.
+
+file_format: 1

@@ -161,10 +161,6 @@ namespace gr {
         }
       }
 
-This is a really great outline.
-I'm thinking the next step might be to make a non-templated class for uploading waveforms, to
-collect the sinks together with.
-
       class pigpiod {
       public:
         typedef boost::shared_ptr<pigpiod> sptr;
@@ -194,7 +190,7 @@ collect the sinks together with.
   
         const int d_handle;
   
-        boost::unordered_map<unsigned, class gr::openemissions::pigpio_sink *> d_sinks;
+        boost::unordered_map<unsigned, gr::block *> d_sinks;
         std::list<int> d_waveforms_in_flight;
   
         gr::thread::mutex d_mtx;
