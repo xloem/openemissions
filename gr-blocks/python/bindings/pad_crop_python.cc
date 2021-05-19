@@ -34,7 +34,10 @@ void bind_pad_crop(py::module& m)
 
 
     py::class_<pad_crop,
-        std::shared_ptr<pad_crop>>(m, "pad_crop", D(pad_crop))
+               gr::tagged_stream_block,
+               gr::block,
+               gr::basic_block,
+               std::shared_ptr<pad_crop>>(m, "pad_crop")
 
         .def(py::init(&pad_crop::make),
            py::arg("itemsize"),

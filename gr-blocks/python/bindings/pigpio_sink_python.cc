@@ -35,7 +35,10 @@ void bind_pigpio_sink_template(py::module& m, const char* classname)
 
 
     py::class_<pigpio_sink,
-        std::shared_ptr<pigpio_sink>>(m, classname, D(pigpio_sink))
+               gr::sync_block,
+               gr::block,
+               gr::basic_block,
+               std::shared_ptr<pigpio_sink>>(m, classname)
 
         .def(py::init(&pigpio_sink::make),
            py::arg("samp_rate"),
@@ -45,29 +48,13 @@ void bind_pigpio_sink_template(py::module& m, const char* classname)
            py::arg("wave_buffer_percent") =  50,
            py::arg("hardware_clock_frequency") =  30000000,
            D(pigpio_sink,make)
-        )
-        
-
-
-
-        ;
-
-
-
-
+        ) ;
 }
-
-
-
-
-
-
-
 
 void bind_pigpio_sink(py::module& m)
 {
     bind_pigpio_sink_template<float>(m, "pigpio_sink_float");
     bind_pigpio_sink_template<int>(m, "pigpio_sink_int");
     bind_pigpio_sink_template<short>(m, "pigpio_sink_short");
-    bind_pigpio_sink_template<char>(m, "pigpio_sink_byte");
+    bind_pigpio_sink_template<signed char>(m, "pigpio_sink_byte");
 }

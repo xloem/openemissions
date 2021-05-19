@@ -332,7 +332,7 @@ pigpio_sink<T>::make(double samp_rate, unsigned pin, T cutoff, const std::string
 template class pigpio_sink<float>;
 template class pigpio_sink<int>;
 template class pigpio_sink<short>;
-template class pigpio_sink<char>;
+template class pigpio_sink<signed char>;
 
 } /* namespace openemissions */
 } /* namespace gr */
