@@ -31,4 +31,5 @@ GR_PYTHON_INSTALL(
 include(GrTest)
 
 set(GR_TEST_TARGET_DEPS gnuradio-openemissions)
+GR_ADD_TEST(qa_pad_crop ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/qa_pad_crop.py)
 GR_ADD_TEST(qa_pigpio_sink ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/qa_pigpio_sink.py)

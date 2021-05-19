@@ -12,6 +12,7 @@
 include(GrPlatform) #define LIB_SUFFIX
 
 list(APPEND openemissions_sources
+    pad_crop_impl.cc
     pigpio_sink_impl.cc
 )
 

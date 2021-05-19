@@ -29,7 +29,10 @@ include(GrPybind)
 ########################################################################
 
 list(APPEND openemissions_python_files
-    pigpio_sink_python.cc python_bindings.cc)
+    pad_crop_python.cc
+    pigpio_sink_python.cc
+    python_bindings.cc
+)
 
 GR_PYBIND_MAKE_OOT(openemissions 
    ../..

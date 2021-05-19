@@ -63,7 +63,7 @@ public:
     stop();
   }
 
-  bool start()
+  bool start() override
   {
     gr::thread::scoped_lock lk(d_server->d_mtx);
     pigpiothrow(set_mode(d_server->d_handle, pin, PI_OUTPUT));
@@ -72,7 +72,7 @@ public:
     return sync_block::start();
   }
 
-  bool stop()
+  bool stop() override
   {
     {
       gr::thread::scoped_lock lk(d_server->d_mtx);
@@ -86,7 +86,7 @@ public:
   // Where all the action really happens
   int work(int noutput_items,
            gr_vector_const_void_star &input_items,
-           gr_vector_void_star &output_items)
+           gr_vector_void_star &output_items) override
   {
     const T *in = reinterpret_cast<const T*>(input_items[0]);
     bool last_state = false;
@@ -136,57 +136,57 @@ public:
     return noutput_items;
   }
 
-  void set_pin(unsigned pin)
+  void set_pin(unsigned pin) override
   {
     set_hw(pin, address(), d_hardware_clock_frequency);
   }
 
-  unsigned pin() const
+  unsigned pin() const override
   {
     return d_pin;
   }
 
-  void set_level(T level)
+  void set_level(T level) override
   {
     d_level = level;
   }
 
-  T level() const
+  T level() const override
   {
     return d_level;
   }
 
-  void set_sample_rate(double sample_rate)
+  void set_sample_rate(double sample_rate) override
   {
     d_sample_rate = sample_rate;
   }
 
-  double sample_rate() const
+  double sample_rate() const override
   {
     return d_sample_rate;
   }
 
-  void set_address(const std::string &address)
+  void set_address(const std::string &address) override
   {
     set_hw(d_pin, address, d_hardware_clock_frequency);
   }
 
-  const std::string &address() const
+  const std::string &address() const override
   {
     return d_server->d_address;
   }
 
-  void set_hardware_clock_frequency(unsigned hardware_clock_frequency)
+  void set_hardware_clock_frequency(unsigned hardware_clock_frequency) override
   {
     set_hw(d_pin, address(), hardware_clock_frequency);
   }
 
-  unsigned hardware_clock_frequency() const
+  unsigned hardware_clock_frequency() const override
   {
     return d_hardware_clock_frequency;
   }
 
-  void set_wave_buffer_percent(int wave_buffer_percent)
+  void set_wave_buffer_percent(int wave_buffer_percent) override
   {
     d_wave_buffer_percent = wave_buffer_percent;
     if (d_wave_buffer_percent > 50) {
@@ -197,7 +197,7 @@ public:
     }
   }
 
-  int wave_buffer_percent() const
+  int wave_buffer_percent() const override
   {
     return d_wave_buffer_percent;
   }
@@ -329,6 +329,12 @@ pigpio_sink<T>::make(double samp_rate, unsigned pin, T cutoff, const std::string
   return gnuradio::make_block_sptr<pigpio_sink_impl<T>>(
     samp_rate, pin, cutoff, address, wave_buffer_percent, hardware_clock_frequency);
 }
+
+template class pigpio_sink<gr_complex>;
+template class pigpio_sink<float>;
+template class pigpio_sink<int>;
+template class pigpio_sink<short>;
+template class pigpio_sink<char>;
 
 } /* namespace openemissions */
 } /* namespace gr */

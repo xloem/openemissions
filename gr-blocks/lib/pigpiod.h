@@ -165,7 +165,7 @@ namespace gr {
       public:
         typedef boost::shared_ptr<pigpiod> sptr;
 
-        sptr get(std::string const & address)
+        static sptr get(std::string const & address)
         {
           gr::thread::scoped_lock lk(s_mtx);
           if (s_servers.count(address)) {

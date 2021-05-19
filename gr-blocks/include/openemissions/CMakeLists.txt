@@ -11,5 +11,7 @@
 ########################################################################
 install(FILES
     api.h
-    pigpio_sink.h DESTINATION include/openemissions
+    pad_crop.h
+    pigpio_sink.h
+    DESTINATION include/openemissions
 )

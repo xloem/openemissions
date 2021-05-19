@@ -1,0 +1,48 @@
+id: openemissions_pad_crop
+label: Tagged Stream Pad/Crop
+flags: [ python, cpp ]
+category: '[openemissions]'
+
+parameters:
+-   id: type
+    label: IO Type
+    dtype: enum
+    options: [complex, float, int, short, byte]
+    option_attributes:
+        size: [gr.sizeof_gr_complex, gr.sizeof_float, gr.sizeof_int, gr.sizeof_short, gr.sizeof_char]
+    hide: part
+-   id: lengthtagname
+    label: Length tag name
+    dtype: string
+    default: packet_len
+-   id: length
+    label: Output length
+    dtype: int
+    default: 4096
+-   id: pad
+    label: Pad to length?
+    dtype: bool
+    default: true
+-   id: crop
+    label: Crop to length?
+    dtype: bool
+    default: true
+
+inputs:
+-   domain: stream
+    dtype: ${ type }
+
+outputs:
+-   domain: stream
+    dtype: ${ type }
+
+templates:
+    imports: import openemissions
+    make: openemissions.pad_crop(${type.size}, ${length}, ${lengthtagname}, ${pad}, ${crop})
+
+cpp_templates:
+    includes: ['#include <openmissions/pad_crop.h>']
+    declarations: 'blocks::pad_crop::sprt ${id};'
+    make: 'this->${id} = blocks::pad_crop::make(${type.size}, ${length}, ${lengthtagname}, ${pad}, ${crop});'
+
+file_format: 1

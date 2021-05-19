@@ -7,5 +7,7 @@
 #
 
 install(FILES
-    openemissions_pigpio_sink.block.yml DESTINATION share/gnuradio/grc/blocks
+    openemissions_pigpio_sink.block.yml
+    openemissions_pad_crop.block.yml
+    DESTINATION share/gnuradio/grc/blocks
 )
