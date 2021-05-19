@@ -16,18 +16,15 @@ namespace openemissions {
 using namespace detail;
 
 template <class T>
-class pigpio_sink_impl : public pigpio_sink<T>
+class pigpio_sink_impl : public pigpio_sink<T>, public pigpiod::wave_sender
 {
 private:
-  unsigned d_pin;
   T d_level;
   double d_sample_rate;
   unsigned d_hardware_clock_frequency;
   int d_wave_buffer_percent;
 
-  uint32_t d_accumulated_us;
   pigpiod::sptr d_server;
-  std::vector<gpioPulse_t> d_pulses;
 
 public:
   /*
@@ -45,12 +42,14 @@ public:
                      1 /*max inputs */,
                      sizeof(T)),
                    gr::io_signature::make(0, 0, 0)),
-    d_pin(0),
+    pigpiod::wave_sender{
+        .d_pin = 0,
+        .d_accumulated_us = 0
+    },
     d_level(level),
     d_sample_rate(samp_rate),
     d_hardware_clock_frequency(0),
-    d_wave_buffer_percent(wave_buffer_percent),
-    d_accumulated_us(0)
+    d_wave_buffer_percent(wave_buffer_percent)
   {
     set_hw(pin, address, hardware_clock_frequency);
   }
@@ -66,8 +65,8 @@ public:
   bool start() override
   {
     gr::thread::scoped_lock lk(d_server->d_mtx);
-    pigpiothrow(set_mode(d_server->d_handle, pin, PI_OUTPUT));
-    d_server->d_sinks[d_pin] = this;
+    pigpiothrow(set_mode(d_server->d_handle, d_pin, PI_OUTPUT));
+    d_server->d_wave_senders[d_pin] = this;
     
     return sync_block::start();
   }
@@ -76,7 +75,7 @@ public:
   {
     {
       gr::thread::scoped_lock lk(d_server->d_mtx);
-      d_server->d_sinks.erase(this);
+      d_server->d_wave_senders.erase(d_pin);
     }
     pulses_filled();
 
@@ -208,8 +207,8 @@ private:
     gr::thread::scoped_lock lk(d_server->d_mtx);
     uint32_t min_us = ~0;
   
-    for (auto & item : d_server->d_sinks) {
-      pigpio_sink_impl &sink = *item.second;
+    for (auto & item : d_server->d_wave_senders) {
+      pigpiod::wave_sender &sink = *item.second;
 
       if (0 == sink.d_accumulated_us) {
         return;
@@ -222,8 +221,8 @@ private:
 
     pigpiothrow(wave_add_new(d_server->d_handle));
 
-    for (auto & item : d_server->d_sinks) {
-      pigpio_sink_impl &sink = *item.second;
+    for (auto & item : d_server->d_wave_senders) {
+      pigpiod::wave_sender &sink = *item.second;
 
       uint32_t us_accumulation = 0;
       size_t pulse_idx = 0;
@@ -282,10 +281,10 @@ private:
       if (pin != d_pin || address != this->address()) {
         {
           gr::thread::scoped_lock lk(d_server->d_mtx);
-          if (pigpiod::get(address)->d_sinks.count(pin)) {
+          if (pigpiod::get(address)->d_wave_senders.count(pin)) {
             throw std::runtime_error("pin " + std::to_string(pin) + " already has output bound on " + address);
           }
-          d_server->d_sinks.erase(d_pin);
+          d_server->d_wave_senders.erase(d_pin);
         }
         pulses_filled();
       }
@@ -300,7 +299,7 @@ private:
       pigpiothrow(set_mode(new_server->d_handle, d_pin, PI_OUTPUT));
 
       d_server = new_server;
-      d_server->d_sinks[d_pin] = this;
+      d_server->d_wave_senders[d_pin] = this;
 
       if (d_accumulated_us) {
         d_pulses.push_back({
@@ -330,7 +329,6 @@ pigpio_sink<T>::make(double samp_rate, unsigned pin, T cutoff, const std::string
     samp_rate, pin, cutoff, address, wave_buffer_percent, hardware_clock_frequency);
 }
 
-template class pigpio_sink<gr_complex>;
 template class pigpio_sink<float>;
 template class pigpio_sink<int>;
 template class pigpio_sink<short>;

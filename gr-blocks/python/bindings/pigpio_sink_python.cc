@@ -14,7 +14,7 @@
 /* BINDTOOL_GEN_AUTOMATIC(0)                                                       */
 /* BINDTOOL_USE_PYGCCXML(0)                                                        */
 /* BINDTOOL_HEADER_FILE(pigpio_sink.h)                                             */
-/* BINDTOOL_HEADER_FILE_HASH(29f4a509cc0ea6edf91f0386fd057843)                     */
+/* BINDTOOL_HEADER_FILE_HASH(c8839f9f2e942adfff9f7af89fe7bdbe)                     */
 /***********************************************************************************/
 
 #include <pybind11/complex.h>
@@ -66,7 +66,6 @@ void bind_pigpio_sink_template(py::module& m, const char* classname)
 
 void bind_pigpio_sink(py::module& m)
 {
-    bind_pigpio_sink_template<gr_complex>(m, "pigpio_sink_complex");
     bind_pigpio_sink_template<float>(m, "pigpio_sink_float");
     bind_pigpio_sink_template<int>(m, "pigpio_sink_int");
     bind_pigpio_sink_template<short>(m, "pigpio_sink_short");

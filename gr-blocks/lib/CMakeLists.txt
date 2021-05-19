@@ -7,6 +7,11 @@
 #
 
 ########################################################################
+# Find PiGPIO
+########################################################################
+find_package(pigpio REQUIRED)
+
+########################################################################
 # Setup library
 ########################################################################
 include(GrPlatform) #define LIB_SUFFIX
@@ -14,6 +19,7 @@ include(GrPlatform) #define LIB_SUFFIX
 list(APPEND openemissions_sources
     pad_crop_impl.cc
     pigpio_sink_impl.cc
+    pigpiod.cc
 )
 
 set(openemissions_sources "${openemissions_sources}" PARENT_SCOPE)
@@ -23,7 +29,7 @@ if(NOT openemissions_sources)
 endif(NOT openemissions_sources)
 
 add_library(gnuradio-openemissions SHARED ${openemissions_sources})
-target_link_libraries(gnuradio-openemissions gnuradio::gnuradio-runtime)
+target_link_libraries(gnuradio-openemissions gnuradio::gnuradio-runtime pigpio::pigpiod_if2)
 target_include_directories(gnuradio-openemissions
     PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
     PUBLIC $<INSTALL_INTERFACE:include>

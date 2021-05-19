@@ -18,10 +18,10 @@ parameters:
     label: Input Type
     dtype: enum
     default: float
-    options: [complex, float, int, short, byte]
-    option_labels: ["Complex", "Float", "Int", "Short", "Byte"]
+    options: [float, int, short, byte]
+    option_labels: ["Float", "Int", "Short", "Byte"]
     option_attributes:
-        size: [gr.sizeof_gr_complex, gr.sizeof_float, gr.sizeof_int, gr.sizeof_short, gr.sizeof_char]
+        size: [gr.sizeof_float, gr.sizeof_int, gr.sizeof_short, gr.sizeof_char]
     hide: part
 -   id: samples_per_second
     label: Sample Rate
