@@ -82,7 +82,7 @@ public:
 
     if (d_pad && noutput_items < d_length) {
       int extra = d_length - noutput_items;
-      memcpy((char*)output_items[0] + input_size, 0, extra * d_itemsize);
+      memset((char*)output_items[0] + input_size, 0, extra * d_itemsize);
       noutput_items += extra;
     }
 
