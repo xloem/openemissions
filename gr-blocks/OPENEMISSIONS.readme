@@ -1,0 +1,27 @@
+Using gnuradio blocks lets one move towards working with open freedom communities.
+Gnuradio blocks are all documented at the gnuradio wiki.
+
+Everyone's goal of course is a general-purpose workbench, but you have to start somewhere.
+
+Pad Crop Block:
+    This is useful for organising wave periods together while adjusting theorised periods.
+            note: there may be helpful blocks under Resamplers to shrink the waves for display if the sample rate is high
+                  rescaling could also be added to pad/crop, or sdl video, but gnuradio's way seems to be to use a hier block to move towards user design
+    Connect these:
+        Stream Tag Tools->Stream to Tagged Stream
+                        configure this to guess the period of the waveform
+        openemissions->Tagged Stream Pad/Crop
+        Video->Video SDL Sink
+                        configure the pad/crop block to output the periods aligned with the video width
+                        now any similarities between them are visually clear as vertical bars
+
+PiGPIO Sink Block:
+    This is useful for driving hardware based on a time-synchronised signal.
+    In Karl's noiscillate experiment, he has a noise generator connected via a relay to a raspberry pi pin.
+    
+    Connect these:
+        Waveform Generators->Signal Source
+                        configure to a square wave with a low frequency
+        openemissions->PiGPIO Sink
+                        oscillate power to a device using a relay
+                        now the same flowgraph can be used mathematically to compare the signal environment with and without the device powered
