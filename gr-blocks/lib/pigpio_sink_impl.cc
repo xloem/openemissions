@@ -23,6 +23,7 @@ private:
   double d_sample_rate;
   unsigned d_hardware_clock_frequency;
   int d_wave_buffer_percent;
+  bool d_watch_for_underrun;
 
   pigpiod::sptr d_server;
 
@@ -67,6 +68,8 @@ public:
     gr::thread::scoped_lock lk(d_server->d_mtx);
     pigpiothrow(set_mode(d_server->d_handle, d_pin, PI_OUTPUT));
     d_server->d_wave_senders[d_pin] = this;
+
+    d_watch_for_underrun = false;
     
     return sync_block::start();
   }
@@ -266,7 +269,12 @@ private:
 
         // send waveform
         int waveform = pigpiothrow(wave_create_and_pad(d_server->d_handle, d_wave_buffer_percent));
+        if (d_watch_for_underrun && wave_tx_at(d_server->d_handle) == PI_NO_TX_WAVE) {
+            GR_LOG_WARN(this->d_logger, "pigpio underrun on " + d_server->d_address + " after " + std::to_string(this->nitems_read(0)) + " samples");
+        }
         pigpiothrow(wave_send_using_mode(d_server->d_handle, waveform, PI_WAVE_MODE_ONE_SHOT_SYNC));
+        d_watch_for_underrun = true;
+
         d_server->d_waveforms_in_flight.push_back(waveform);
     }
 
@@ -274,9 +282,7 @@ private:
       // delete waves that have completed
       
       int tx_wave = wave_tx_at(d_server->d_handle);
-      if (tx_wave != PI_NO_TX_WAVE || ! d_server->d_wave_senders.empty()) {
-        // PI_NO_TX_WAVE is not an error if no wave was just sent
-        // all other error codes are errors
+      if (tx_wave != PI_NO_TX_WAVE) {
         pigpiothrow(tx_wave);
       }
 

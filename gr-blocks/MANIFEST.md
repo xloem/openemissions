@@ -1,4 +1,4 @@
-title: The CIRCUITS OOT Module
+title: The OPENEMISSIONS OOT Module
 brief: Short description of gr-openemissions
 tags: # Tags are arbitrary, but look at CGRAN what other authors are using
   - sdr
