@@ -88,9 +88,9 @@ public:
            gr_vector_void_star &output_items) override
   {
     const T *in = reinterpret_cast<const T*>(input_items[0]);
-    bool last_state = false;
     bool might_send = (0 == d_accumulated_us);
     int last_us = 0;
+    bool last_state;
 
     for (int sample = 0; sample <= noutput_items; ++ sample) {
       bool send_last_pulse;
@@ -120,11 +120,12 @@ public:
           pulse.gpioOff = d_pin;
         }
 
-        double target_us = (sample - (double)0.5) * 1000000 / d_sample_rate;
+        double target_us = sample * 1000000 / d_sample_rate;
         pulse.usDelay = target_us - last_us;
         d_accumulated_us += pulse.usDelay;
         last_us = target_us;
       }
+      last_state = state;
     }
 
     if (might_send) {
