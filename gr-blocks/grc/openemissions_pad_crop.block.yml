@@ -49,4 +49,16 @@ asserts:
 -   ${ pad or crop }
 -   ${ length > 0 }
 
+documentation: |-
+    This is a tagged stream block, which are treated specially by gnuradio.  Stream content
+    is interpreted as packets, each one preceded by a tag giving its length, and the stream
+    flow is adjusted so that each call to a work function operates on exactly one packet.
+    Tags can be generated with a block such as Stream Tag Tools -> Stream to Tagged Stream.
+
+    If pad is set, then short packets will be lengthened with zeros.
+
+    If crop is set, then long packets will be cut short, losing their excess data.
+
+    If both are set, then all packets will come out the same length.
+
 file_format: 1
