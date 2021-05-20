@@ -270,13 +270,26 @@ private:
         d_server->d_waveforms_in_flight.push_back(waveform);
     }
 
-    // delete waves that have completed
-    while (!d_server->d_waveforms_in_flight.empty()) {
-      if (!d_server->d_wave_senders.empty() && d_server->d_waveforms_in_flight.front() == wave_tx_at(d_server->d_handle)) {
-        break;
+    if (!d_server->d_waveforms_in_flight.empty()) {
+      // delete waves that have completed
+      
+      int tx_wave = wave_tx_at(d_server->d_handle);
+      if (tx_wave != PI_NO_TX_WAVE || ! d_server->d_wave_senders.empty()) {
+        // PI_NO_TX_WAVE is not an error if no wave was just sent
+        // all other error codes are errors
+        pigpiothrow(tx_wave);
       }
-      pigpiothrow(wave_delete(d_server->d_handle, d_server->d_waveforms_in_flight.front()));
-      d_server->d_waveforms_in_flight.pop_front();
+
+      do {
+        // if waves are still being sent, then don't delete ones in flight or queued
+        if (!d_server->d_wave_senders.empty() && d_server->d_waveforms_in_flight.front() == tx_wave) {
+          break;
+        }
+
+        pigpiothrow(wave_delete(d_server->d_handle, d_server->d_waveforms_in_flight.front()));
+        d_server->d_waveforms_in_flight.pop_front();
+
+      } while (!d_server->d_waveforms_in_flight.empty());
     }
   }
 
