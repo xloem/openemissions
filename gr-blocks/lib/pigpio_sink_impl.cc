@@ -206,71 +206,75 @@ private:
   void pulses_filled()
   {
     gr::thread::scoped_lock lk(d_server->d_mtx);
-    uint32_t min_us = ~0;
+    if (! d_server->d_wave_senders.empty()) {
+        uint32_t min_us = ~0;
   
-    for (auto & item : d_server->d_wave_senders) {
-      pigpiod::wave_sender &sink = *item.second;
+        for (auto & item : d_server->d_wave_senders) {
+          pigpiod::wave_sender &sink = *item.second;
 
-      if (0 == sink.d_accumulated_us) {
-        return;
-      }
+          if (0 == sink.d_accumulated_us) {
+            return;
+          }
 
-      if (sink.d_accumulated_us < min_us) {
-        min_us = sink.d_accumulated_us;
-      }
-    }
-
-    pigpiothrow(wave_add_new(d_server->d_handle));
-
-    for (auto & item : d_server->d_wave_senders) {
-      pigpiod::wave_sender &sink = *item.second;
-
-      uint32_t us_accumulation = 0;
-      size_t pulse_idx = 0;
-      for (
-        us_accumulation = 0, pulse_idx = 0;
-        us_accumulation < min_us;
-        us_accumulation += sink.d_pulses[pulse_idx].usDelay, ++pulse_idx
-      ) {
-        if (pulse_idx >= sink.d_pulses.size()) {
-          throw std::logic_error("iterated off end of pulse list, should have small enough min_us to prevent");
+          if (sink.d_accumulated_us < min_us) {
+            min_us = sink.d_accumulated_us;
+          }
         }
-      }
 
-      // this is now the last pulse in the wave
-      gpioPulse_t & pulse = sink.d_pulses[pulse_idx];
+        pigpiothrow(wave_add_new(d_server->d_handle));
 
-      // shorten the pulse to waveform length
-      uint32_t extra_us = us_accumulation - min_us;
-      pulse.usDelay -= extra_us;
+        for (auto & item : d_server->d_wave_senders) {
+          pigpiod::wave_sender &sink = *item.second;
 
-      // add the waveform
-      pigpiothrow(wave_add_generic(d_server->d_handle, pulse_idx, sink.d_pulses.data()));
-      
-      if (us_accumulation > min_us) {
-        // adjust the rest of the pulse to be part of the next waveform
-        pulse = {
-          .gpioOn = 0,
-          .gpioOff = 0,
-          .usDelay = extra_us
-        };
-        -- pulse_idx;
-      }
+          uint32_t us_accumulation = 0;
+          size_t pulse_idx = 0;
+          for (
+            us_accumulation = 0, pulse_idx = 0;
+            us_accumulation < min_us;
+            us_accumulation += sink.d_pulses[pulse_idx].usDelay, ++pulse_idx
+          ) {
+            if (pulse_idx >= sink.d_pulses.size()) {
+              throw std::logic_error("iterated off end of pulse list, should have small enough min_us to prevent");
+            }
+          }
 
-      // remove the added waveform from the queue
-      sink.d_pulses.erase(sink.d_pulses.begin(), sink.d_pulses.begin() + pulse_idx);
+          // this is now the last pulse in the wave
+          gpioPulse_t & pulse = sink.d_pulses[pulse_idx];
 
-      sink.d_accumulated_us -= min_us;
+          // shorten the pulse to waveform length
+          uint32_t extra_us = us_accumulation - min_us;
+          pulse.usDelay -= extra_us;
+
+          // add the waveform
+          pigpiothrow(wave_add_generic(d_server->d_handle, pulse_idx, sink.d_pulses.data()));
+          
+          if (us_accumulation > min_us) {
+            // adjust the rest of the pulse to be part of the next waveform
+            pulse = {
+              .gpioOn = 0,
+              .gpioOff = 0,
+              .usDelay = extra_us
+            };
+            -- pulse_idx;
+          }
+
+          // remove the added waveform from the queue
+          sink.d_pulses.erase(sink.d_pulses.begin(), sink.d_pulses.begin() + pulse_idx);
+
+          sink.d_accumulated_us -= min_us;
+        }
+
+        // send waveform
+        int waveform = pigpiothrow(wave_create_and_pad(d_server->d_handle, d_wave_buffer_percent));
+        pigpiothrow(wave_send_using_mode(d_server->d_handle, waveform, PI_WAVE_MODE_ONE_SHOT_SYNC));
+        d_server->d_waveforms_in_flight.push_back(waveform);
     }
-
-    // send waveform
-    int waveform = pigpiothrow(wave_create_and_pad(d_server->d_handle, d_wave_buffer_percent));
-    pigpiothrow(wave_send_using_mode(d_server->d_handle, waveform, PI_WAVE_MODE_ONE_SHOT_SYNC));
-    d_server->d_waveforms_in_flight.push_back(waveform);
 
     // delete waves that have completed
-    // this loop assumes that the wave just sent prevents wave_tx_at from returning a no-wave-sent error
-    while (d_server->d_waveforms_in_flight.front() != pigpiothrow(wave_tx_at(d_server->d_handle))) {
+    while (!d_server->d_waveforms_in_flight.empty()) {
+      if (!d_server->d_wave_senders.empty() && d_server->d_waveforms_in_flight.front() == wave_tx_at(d_server->d_handle)) {
+        break;
+      }
       pigpiothrow(wave_delete(d_server->d_handle, d_server->d_waveforms_in_flight.front()));
       d_server->d_waveforms_in_flight.pop_front();
     }
