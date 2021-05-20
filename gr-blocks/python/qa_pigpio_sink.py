@@ -254,7 +254,7 @@ class qa_pigpio_sink (gr_unittest.TestCase):
 
     def test_001_descriptive_test_name (self):
         pigpiod = mock_pigpiod()
-        bgfg = bg_flowgraph(samples_per_sec = 1000,
+        bgfg = bg_flowgraph(samples_per_sec = 10000,
                             data = [0, 0.2, 0.5, 0.4, 0.3],
                             pin = 4,
                             level = 0.3,
@@ -267,7 +267,7 @@ class qa_pigpio_sink (gr_unittest.TestCase):
 
         start_time = pigpiod.pulses_sent[0][2]
         self.assertSequenceEqual([
-            (gpioOn, gpioOff, (time - start_time) * 1000 / 1000000)
+            (gpioOn, gpioOff, (time - start_time) * bgfg.sample_rate / 1000000)
             for gpioOn, gpioOff, time
             in pigpiod.pulses_sent
         ], [
