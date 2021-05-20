@@ -210,17 +210,18 @@ class mock_pigpiod(multiprocessing.Process):
     def us(self):
         return int(pigpio.time.time() * 1000000)
     def reply(self, sock, code = 0):
-        if code < 0 or code > 9000:
+        if code < 0 or code == pigpio.WAVE_NOT_FOUND:
             self.errors.append(code)
         sock.sendall(struct.pack('<12xl', code))
 
 class bg_flowgraph(multiprocessing.Process):
-    def __init__(self, samples_per_sec, data, pin, level, address = '127.0.0.1:8888'):
+    def __init__(self, samples_per_sec, data, max_nitems, pin, level, address = '127.0.0.1:8888'):
         super().__init__()
         self.tb = gr.top_block ()
         self.address = address
         self.sample_rate = samples_per_sec
         self.src = blocks.vector_source_f (data)
+        self.max_nitems = max_nitems
         self.pin = pin
         self.level = level
         self.throttle = blocks.throttle(gr.sizeof_float, self.sample_rate)
@@ -231,6 +232,7 @@ class bg_flowgraph(multiprocessing.Process):
             level = self.level,
             address = self.address
         )
+        sink.set_max_noutput_items(self.max_nitems)
         
         self.tb.connect (self.src, self.throttle, sink)
 
@@ -256,6 +258,7 @@ class qa_pigpio_sink (gr_unittest.TestCase):
         pigpiod = mock_pigpiod()
         bgfg = bg_flowgraph(samples_per_sec = 10000,
                             data = [0, 0.2, 0.5, 0.4, 0.3],
+                            max_nitems = 3,
                             pin = 4,
                             level = 0.3,
                             address = pigpiod.address)
