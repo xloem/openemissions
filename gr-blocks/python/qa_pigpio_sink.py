@@ -6,6 +6,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 
+import tracemalloc
+tracemalloc.start()
+
 from gnuradio import gr, gr_unittest
 from gnuradio import blocks
 try:
@@ -27,7 +30,10 @@ except ImportError:
 # much better testing.  such a patch is expected to be easy to implement.
 # https://github.com/joan2937/pigpio/issues/469
 
-# to debug multiprocess code in gdb, use `set detach-on-fork off`
+# debugging multiprocess code in gdb:
+# `set follow-fork-mode child` switches to the child process on fork
+# `set detach-on-fork off` connects to all forks but might need tweaking
+#                          to allocate process time properly
 
 import select
 import socket
@@ -56,7 +62,7 @@ class mock_pigpiod(multiprocessing.Process):
     def start(self):
         super().start()
         # give time for server to listen
-        pigpio.time.sleep(1)
+        pigpio.time.sleep(0.1)
     def run(self):
         self.errors = []
         self.modes = {}
@@ -72,7 +78,7 @@ class mock_pigpiod(multiprocessing.Process):
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.server.bind((self.ip, self.port))
-        print('mock pigpiod listening on', (self.ip, self.port))
+        #print('mock pigpiod listening on', (self.ip, self.port))
         self.server.listen()
         socks = [self.server, self.server.accept()[0]]
         while len(socks) > 1 or self.pulsequeue:
@@ -128,6 +134,8 @@ class mock_pigpiod(multiprocessing.Process):
                     #print('received ', cmd, p1, p2, ext)
                     if cmd == pigpio._PI_CMD_NOIB: # notify
                         self.reply(s)
+                    elif cmd == pigpio._PI_CMD_NC: # notify close
+                        self.reply(s)
                     elif cmd == pigpio._PI_CMD_BR1: # read_bank_1
                         self.reply(s)
                     elif cmd == pigpio._PI_CMD_HC: # hardware_clock
@@ -142,7 +150,7 @@ class mock_pigpiod(multiprocessing.Process):
                         pulses = s.recv(ext)
                         pulses = [pulses[i:i+12] for i in range(0, len(pulses), 12)]
                         pulses = [[*struct.unpack('<3L', pulse)] for pulse in pulses]
-                        #print('got pulses', pulses)
+                        #print('PI_CMD_WVAG', pulses)
                         for index, pulse in enumerate(pulses):
                             if index == 0:
                                 continue
@@ -150,49 +158,49 @@ class mock_pigpiod(multiprocessing.Process):
                         #print('accumulated pulse delays', pulses)
                         self.wave.extend(pulses)
                         self.wave.sort(key = lambda pulse: pulse[2])
-                        #print('merged pulses into wave', self.wave)
                         self.reply(s)
                     elif cmd == pigpio._PI_CMD_WVCAP: # wave_create_and_pad
                         for wavenum in range(len(self.waves)+1):
                             if wavenum in self.waves:
                                 continue
-                            self.waves[wavenum] = self.wave
-                            self.wave = []
-                            #print('made wave', wavenum)
-                            self.reply(s, wavenum)
+                            if self.wave:
+                                self.waves[wavenum] = self.wave
+                                self.wave = []
+                                #print('PI_CMD_WVCAP', wavenum)
+                                self.reply(s, wavenum)
+                            else:
+                                self.reply(s, pigpio.PI_EMPTY_WAVEFORM)
                             break
                     elif cmd == pigpio._PI_CMD_WVTXM: # wave_send_using_mode
                         wave_id, mode = p1, p2
                         self.wavesendmodes.add(mode)
                         self.wavequeue.append(wave_id)
-                        #print('send wave', wave_id)
+                        #print('PI_CMD_WVTXM', wave_id)
                         if not self.start_time:
                             self.start_time = self.us()
                         self.reply(s)
                     elif cmd == pigpio._PI_CMD_WVTAT: # wave_tx_at
                         if self.curwave is None:
-                            #print('no tx wave')
                             self.reply(s, pigpio.NO_TX_WAVE)
                         elif self.curwave not in self.waves:
-                            #print('current wave not found')
                             self.reply(s, pigpio.WAVE_NOT_FOUND)
                         else:
-                            #print('wave at', self.curwave)
+                            #print('PI_CMD_WVTAT', self.curwave)
                             self.reply(s, self.curwave)
                     elif cmd == pigpio._PI_CMD_WVDEL: # wave_delete
-                        #print('delete wave', p1)
+                        #print('PI_CMD_WVDEL', p1)
                         if p1 not in self.waves:
                             self.reply(s, pigpio.PI_BAD_WAVE_ID)
                         else:
                             self.waves[p1] = None
                             self.reply(s)
                     else:
-                        self.server.close()
-                        raise Exception(cmd, p1, p2, ext)
+                        [sock.close() for sock in socks]
+                        raise Exception('mock pigpiod received unimplemented command', cmd, p1, p2, ext)
             for s in exceptional:
                 socks.remove(s)
                 s.close()
-        print('mock pigpiod on', (self.ip, self.port), 'closing')
+        #print('mock pigpiod on', (self.ip, self.port), 'closing')
         socks[0].close()
         if self.start_time:
             self.pulses_sent.append([
