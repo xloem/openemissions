@@ -47,6 +47,7 @@ void bind_pigpio_sink_template(py::module& m, const char* classname)
            py::arg("address") =  "127.0.0.1:8888",
            py::arg("wave_buffer_percent") =  50,
            py::arg("hardware_clock_frequency") =  30000000,
+           py::arg("pad_milliamps") = 0,
            D(pigpio_sink,make)
         ) ;
 }

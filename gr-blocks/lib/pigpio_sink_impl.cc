@@ -36,7 +36,8 @@ public:
                    T level,
                    const std::string &address,
                    int wave_buffer_percent,
-                   int hardware_clock_frequency)
+                   int hardware_clock_frequency,
+                   unsigned pad_milliamps)
   : gr::sync_block("pigpio_sink",
                    gr::io_signature::make(
                      1 /* min inputs */,
@@ -53,6 +54,7 @@ public:
     d_wave_buffer_percent(wave_buffer_percent)
   {
     set_hw(pin, address, hardware_clock_frequency);
+    set_pad_milliamps(pad_milliamps);
   }
 
   /*
@@ -205,7 +207,34 @@ public:
     return d_wave_buffer_percent;
   }
 
+  void set_pad_milliamps(unsigned pad_milliamps) override
+  {
+    if (pad_milliamps == 0) {
+        // leave the strength as is
+        return;
+    }
+    pigpiothrow(set_pad_strength(d_server->d_handle, pad(), pad_milliamps));
+  }
+
+  unsigned pad_milliamps() const override
+  {
+    return pigpiothrow(get_pad_strength(d_server->d_handle, pad()));
+  }
+
 private:
+  unsigned pad() const
+  {
+    if (d_pin < 28) {
+        return 0;
+    } else if (d_pin < 46) {
+        return 1;
+    } else if (d_pin < 54) {
+        return 2;
+    } else {
+        throw std::runtime_error("no pad for pins >= 54 likely a code update needed for new hardware.  just set pad strength = 0 to work around.");
+    }
+  }
+
   void pulses_filled()
   {
     gr::thread::scoped_lock lk(d_server->d_mtx);
@@ -347,10 +376,22 @@ private:
 
 template <typename T>
 typename pigpio_sink<T>::sptr
-pigpio_sink<T>::make(double samp_rate, unsigned pin, T cutoff, const std::string& address, int wave_buffer_percent, unsigned hardware_clock_frequency)
+pigpio_sink<T>::make(double samp_rate,
+                     unsigned pin,
+                     T cutoff,
+                     const std::string& address,
+                     int wave_buffer_percent,
+                     unsigned hardware_clock_frequency,
+                     unsigned pad_milliamps)
 {
   return gnuradio::make_block_sptr<pigpio_sink_impl<T>>(
-    samp_rate, pin, cutoff, address, wave_buffer_percent, hardware_clock_frequency);
+    samp_rate,
+    pin,
+    cutoff,
+    address,
+    wave_buffer_percent,
+    hardware_clock_frequency,
+    pad_milliamps);
 }
 
 template class pigpio_sink<float>;

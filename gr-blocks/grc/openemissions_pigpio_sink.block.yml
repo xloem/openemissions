@@ -4,7 +4,7 @@ category: '[openemissions]'
 
 templates:
     imports: import openemissions
-    make: openemissions.pigpio_sink_${type}(${samples_per_second}, ${pin}, ${level}, ${address}, ${wave_buffer_percent}, ${hardware_clock_frequency})
+    make: openemissions.pigpio_sink_${type}(${samples_per_second}, ${pin}, ${level}, ${address}, ${wave_buffer_percent}, ${hardware_clock_frequency}, ${pad_milliamps})
     callbacks:
     - set_sample_rate(${samples_per_second})
     - set_pin(${pin})
@@ -12,6 +12,7 @@ templates:
     - set_address(${address})
     - set_wave_buffer_percent(${wave_buffer_percent})
     - set_hardware_clock_frequency(${hardware_clock_frequency})
+    - set_pad_milliamps(${pad_milliamps})
 
 parameters:
 -   id: type
@@ -55,6 +56,10 @@ parameters:
     default: '30000000'
     dtype: int
     category: Advanced
+-   id: pad_milliamps
+    label: GPIO Pad Milliamps
+    default: '0'
+    dtype: int
   
 #  Make one 'inputs' list entry per input and one 'outputs' list entry per output.
 #  Keys include:
@@ -71,16 +76,23 @@ inputs:
 
 asserts:
 - ${ vlen > 0 }
+- ${ wave_buffer_percent > 0 and wave_buffer_percent <= 50 }
+- ${ pad_milliamps >= 0 and pad_milliamps <= 16 }
     
 documentation: |-
-    Run the pigpiod service on a raspberry pi and specify the hostname here to drive a gpio pin.
+    Run the pigpiod service on a raspberry pi and specify the hostname here to drive a gpio
+    pin.
     
     The pin is set high if and only if the input signal is greater than the value of Level.
     
     Time resolutions faster than a few microseconds are not reproducible with pigpio,
     so it's probably good to downsample to below 100K sample rate.
     
-    Significantly lowering the DMA Buffer Percent per Wave will allow more waves to be queued in flight,
-    protecting against buffer underruns, but decrease the amount of data the block can process at once.
+    Significantly lowering the DMA Buffer Percent per Wave will allow more waves to be queued
+    in flight, protecting against buffer underruns, but decrease the amount of data the block
+    can process at once.
+
+    The default value of 0 for the pad milliamps will leave the gpio pad
+    strength as is.  There are only up to 3 pads spread among all the gpios.
 
 file_format: 1

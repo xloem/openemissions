@@ -39,7 +39,8 @@ public:
                    T level = 0,
                    const std::string &address = "127.0.0.1:8888",
                    int wave_buffer_percent = 50,
-                   unsigned hardware_clock_frequency = 30000000);
+                   unsigned hardware_clock_frequency = 30000000,
+                   unsigned pad_milliamps = 0);
 
   virtual void set_pin(unsigned pin) = 0;
   virtual unsigned pin() const = 0;
@@ -58,6 +59,9 @@ public:
 
   virtual void set_wave_buffer_percent(int wave_buffer_percent) = 0;
   virtual int wave_buffer_percent() const = 0;
+
+  virtual void set_pad_milliamps(unsigned pad_milliamps) = 0;
+  virtual unsigned pad_milliamps() const = 0;
 };
 
 } // namespace openemissions
