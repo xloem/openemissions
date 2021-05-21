@@ -148,6 +148,9 @@ class mock_pigpiod(multiprocessing.Process):
                             self.reply(s)
                         elif cmd == pigpio._PI_CMD_HC: # hardware_clock
                             self.reply(s)
+                        elif cmd == pigpio._PI_CMD_WVCLR: # wave_clear
+                            self.waves = {}
+                            self.reply(s)
                         elif cmd == pigpio._PI_CMD_WVSM:
                             if p1 == 0: # wave_get_micros
                                 self.reply(s, self.waves[self.curwave][-1][2] if self.curwave else 0)
