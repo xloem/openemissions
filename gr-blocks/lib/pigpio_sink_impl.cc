@@ -121,7 +121,7 @@ public:
       if (send_last_pulse) {
         gr::thread::scoped_lock lk(d_server->d_mtx);
 
-        unsigned target_us = sample * 1000000 / d_sample_rate;
+        unsigned target_us = sample * 1000000. / d_sample_rate;
         unsigned delay_us = target_us - last_us;
 
         if (d_accumulated_us + delay_us >= max_micros || d_pulses.size() + 1 >= max_pulses) {
@@ -276,7 +276,7 @@ private:
           }
         }
 
-        GR_LOG_DEBUG(this->d_logger, d_server->d_address + ": gpioWaveAddNew()");
+        //GR_LOG_DEBUG(this->d_logger, d_server->d_address + ": gpioWaveAddNew()");
         pigpiothrow(wave_add_new(d_server->d_handle));
 
         for (auto & item : d_server->d_wave_senders) {
@@ -292,7 +292,7 @@ private:
             if (pulse_idx >= sink.d_pulses.size()) {
               throw std::logic_error("iterated off end of pulse list, should have small enough min_us to prevent");
             }
-            //GR_LOG_DEBUG(this->d_logger, d_server->d_address + ": d_pulses[" + std::to_string(pulse_idx) + "] -> " + std::to_string(sink.d_pulses[pulse_idx].gpioOn) + " " + std::to_string(sink.d_pulses[pulse_idx].gpioOff) + " " + std::to_string(sink.d_pulses[pulse_idx].usDelay));
+            ////GR_LOG_DEBUG(this->d_logger, d_server->d_address + ": d_pulses[" + std::to_string(pulse_idx) + "] -> " + std::to_string(sink.d_pulses[pulse_idx].gpioOn) + " " + std::to_string(sink.d_pulses[pulse_idx].gpioOff) + " " + std::to_string(sink.d_pulses[pulse_idx].usDelay));
           }
 
           // this is now the last pulse in the wave
@@ -303,7 +303,7 @@ private:
           pulse.usDelay -= extra_us;
 
           // add the waveform
-          GR_LOG_DEBUG(this->d_logger, d_server->d_address + ": gpioWaveAddGeneric(" + std::to_string(pulse_idx) + ", d_pulses)");
+          //GR_LOG_DEBUG(this->d_logger, d_server->d_address + ": gpioWaveAddGeneric(" + std::to_string(pulse_idx) + ", d_pulses)");
           pigpiothrow(wave_add_generic(d_server->d_handle, pulse_idx, sink.d_pulses.data()));
           
           if (us_accumulation > min_us) {
@@ -326,11 +326,11 @@ private:
 
         // send waveform
         int waveform = pigpiothrow(wave_create_and_pad(d_server->d_handle, d_wave_buffer_percent));
-        GR_LOG_DEBUG(this->d_logger, d_server->d_address + ": gpioWaveCreatePad(" + std::to_string(d_wave_buffer_percent) + ") -> " + std::to_string(waveform));
+        //GR_LOG_DEBUG(this->d_logger, d_server->d_address + ": gpioWaveCreatePad(" + std::to_string(d_wave_buffer_percent) + ") -> " + std::to_string(waveform));
         if (d_watch_for_underrun && wave_tx_at(d_server->d_handle) == PI_NO_TX_WAVE) {
             GR_LOG_WARN(this->d_logger, "pigpio underrun on " + d_server->d_address + " after " + std::to_string(this->nitems_read(0)) + " samples");
         }
-        GR_LOG_DEBUG(this->d_logger, d_server->d_address + ": gpioWaveTxSend(" + std::to_string(waveform) + ", PI_WAVE_MODE_ONE_SHOT_SYNC)");
+        //GR_LOG_DEBUG(this->d_logger, d_server->d_address + ": gpioWaveTxSend(" + std::to_string(waveform) + ", PI_WAVE_MODE_ONE_SHOT_SYNC)");
         pigpiothrow(wave_send_using_mode(d_server->d_handle, waveform, PI_WAVE_MODE_ONE_SHOT_SYNC));
         d_watch_for_underrun = true;
 
@@ -341,7 +341,7 @@ private:
       // delete waves that have completed
       
       int tx_wave = wave_tx_at(d_server->d_handle);
-      GR_LOG_DEBUG(this->d_logger, d_server->d_address + ": gpioWaveTxAt() -> " + std::to_string(tx_wave));
+      //GR_LOG_DEBUG(this->d_logger, d_server->d_address + ": gpioWaveTxAt() -> " + std::to_string(tx_wave));
       if (tx_wave != PI_NO_TX_WAVE) {
         pigpiothrow(tx_wave);
       }
@@ -351,10 +351,10 @@ private:
       if (100 / d_wave_buffer_percent <= d_server->d_waveforms_in_flight.size()) {
         while (tx_wave == d_server->d_waveforms_in_flight.front()) {
           int micros = pigpiothrow(wave_get_micros(d_server->d_handle));
-          GR_LOG_DEBUG(this->d_logger, d_server->d_address + ": gpioWaveGetMicros() -> " + std::to_string(micros));
+          //GR_LOG_DEBUG(this->d_logger, d_server->d_address + ": gpioWaveGetMicros() -> " + std::to_string(micros));
           std::this_thread::sleep_for(std::chrono::microseconds(micros / 2));
           tx_wave = wave_tx_at(d_server->d_handle);
-          GR_LOG_DEBUG(this->d_logger, d_server->d_address + ": gpioWaveTxAt() -> " + std::to_string(tx_wave));
+          //GR_LOG_DEBUG(this->d_logger, d_server->d_address + ": gpioWaveTxAt() -> " + std::to_string(tx_wave));
         }
       }
 
@@ -364,7 +364,7 @@ private:
           break;
         }
 
-        GR_LOG_DEBUG(this->d_logger, d_server->d_address + ": gpioWaveDelete(" + std::to_string(d_server->d_waveforms_in_flight.front()) + ")");
+        //GR_LOG_DEBUG(this->d_logger, d_server->d_address + ": gpioWaveDelete(" + std::to_string(d_server->d_waveforms_in_flight.front()) + ")");
         pigpiothrow(wave_delete(d_server->d_handle, d_server->d_waveforms_in_flight.front()));
         d_server->d_waveforms_in_flight.pop_front();
 
