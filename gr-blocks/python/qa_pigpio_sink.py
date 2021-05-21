@@ -233,21 +233,21 @@ class mock_pigpiod(multiprocessing.Process):
         finally:
             [s.close() for s in socks]
     def append_pulse(self, pulse, merge = True):
-        state = {}
+        state = {'gpio': pulse[1] & ~pulse[0]}
         differ = False
         #print('append_pulse', pulse)
         if self.pulses_sent:
             state.update(self.pulses_sent[-1])
         if pulse[0] != 0:
-            if state.get(pulse[0]) != 1:
-                state[pulse[0]] = 1
+            #print('pulse 0', state['gpio'] & pulse[0])
+            if (state['gpio'] & pulse[0]) != pulse[0]:
+                state['gpio'] |= pulse[0]
                 differ = True
-                #print('differ because', pulse[0], '!= 0')
         if pulse[1] != 0:
-            if state.get(pulse[1]) != 0:
-                state[pulse[1]] = 0
+            #print('pulse 1', state['gpio'] & pulse[1])
+            if (state['gpio'] & pulse[1]) != 0:
+                state['gpio'] &= ~pulse[1]
                 differ = True
-                #print('differ because', pulse[1], '!= 0')
         if differ or not merge:
             #print('merge=', merge, ' ',state, '!=', [None,*self.pulses_sent][-1])
             #if not merge:
@@ -329,10 +329,10 @@ class qa_pigpio_sink (gr_unittest.TestCase):
             {**state, 'time': (state['time'] - start_time) * bgfg.sample_rate / 1000000}
             for state in pigpiod.pulses_sent
         ], [
-            {4: 0, 'time': 0}, # 4 dropped at sample 0
-            {4: 1, 'time': 2}, # 4 raised at sample 2
-            {4: 0, 'time': 4}, # 4 dropped at sample 4
-            {4: 0, 'time': 5}  # stream ends
+            {'gpio': 0x00, 'time': 0}, # 4 dropped at sample 0
+            {'gpio': 0x10, 'time': 2}, # 4 raised at sample 2
+            {'gpio': 0x00, 'time': 4}, # 4 dropped at sample 4
+            {'gpio': 0x00, 'time': 5}  # stream ends
         ])
 
 if __name__ == '__main__':

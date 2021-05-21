@@ -130,11 +130,11 @@ public:
         gpioPulse_t & pulse = d_pulses.back();
 
         if (last_state) {
-          pulse.gpioOn = d_pin;
+          pulse.gpioOn = 1 << d_pin;
           pulse.gpioOff = 0;
         } else {
           pulse.gpioOn = 0;
-          pulse.gpioOff = d_pin;
+          pulse.gpioOff = 1 << d_pin;
         }
 
         pulse.usDelay = delay_us;
