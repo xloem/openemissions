@@ -28,7 +28,9 @@ pigpiod::~pigpiod()
 pigpiod::pigpiod(std::string const & address)
 : d_address(address),
   d_handle(start(address))
-{ }
+{
+  pigpiothrow(wave_clear(d_handle));
+}
 
 int pigpiod::start(std::string const & address)
 {
