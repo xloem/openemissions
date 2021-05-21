@@ -10,6 +10,8 @@
 #include <openemissions/pigpio_sink.h>
 #include "pigpiod.h"
 
+#include <thread>
+
 namespace gr {
 namespace openemissions {
 
@@ -94,7 +96,9 @@ public:
   {
     const T *in = reinterpret_cast<const T*>(input_items[0]);
     bool might_send = (0 == d_accumulated_us);
-    int last_us = 0;
+    int max_micros = pigpiothrow(wave_get_max_micros(d_server->d_handle));
+    int max_pulses = pigpiothrow(wave_get_max_pulses(d_server->d_handle));
+    unsigned last_us = 0;
     bool last_state;
 
     for (int sample = 0; sample <= noutput_items; ++ sample) {
@@ -114,6 +118,14 @@ public:
 
       if (send_last_pulse) {
         gr::thread::scoped_lock lk(d_server->d_mtx);
+
+        unsigned target_us = sample * 1000000 / d_sample_rate;
+        unsigned delay_us = target_us - last_us;
+
+        while (d_accumulated_us + delay_us >= max_micros || d_pulses.size() + 1 >= max_pulses) {
+          d_server->d_cond.wait(lk);
+        }
+
         d_pulses.resize(d_pulses.size() + 1);
         gpioPulse_t & pulse = d_pulses.back();
 
@@ -125,8 +137,7 @@ public:
           pulse.gpioOff = d_pin;
         }
 
-        double target_us = sample * 1000000 / d_sample_rate;
-        pulse.usDelay = target_us - last_us;
+        pulse.usDelay = delay_us;
         d_accumulated_us += pulse.usDelay;
         last_us = target_us;
       }
@@ -296,6 +307,8 @@ private:
           sink.d_accumulated_us -= min_us;
         }
 
+        d_server->d_cond.notify_all();
+
         // send waveform
         int waveform = pigpiothrow(wave_create_and_pad(d_server->d_handle, d_wave_buffer_percent));
         if (d_watch_for_underrun && wave_tx_at(d_server->d_handle) == PI_NO_TX_WAVE) {
@@ -313,6 +326,16 @@ private:
       int tx_wave = wave_tx_at(d_server->d_handle);
       if (tx_wave != PI_NO_TX_WAVE) {
         pigpiothrow(tx_wave);
+      }
+
+      // if the queue is full, wait to ensure the first wave has finished sending,
+      // so there will be room for another
+      if (100 / d_wave_buffer_percent <= d_server->d_waveforms_in_flight.size()) {
+        while (tx_wave == d_server->d_waveforms_in_flight.front()) {
+          int micros = pigpiothrow(wave_get_micros(d_server->d_handle)) / 2;
+          std::this_thread::sleep_for(std::chrono::microseconds(micros));
+          tx_wave = wave_tx_at(d_server->d_handle);
+        }
       }
 
       do {

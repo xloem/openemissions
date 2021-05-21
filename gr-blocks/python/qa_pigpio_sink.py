@@ -77,6 +77,10 @@ class mock_pigpiod(multiprocessing.Process):
         self.start_time = None
         self.pulsequeue = []
         self.pulses_sent = []
+        self.high_micros = 0
+        self.high_pulses = 0
+        self.cur_pulses = 0
+        self.cur_micros = 0
 
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -105,6 +109,10 @@ class mock_pigpiod(multiprocessing.Process):
                             for gpioOn, gpioOff, time
                             in self.waves[self.curwave]
                         ]
+                        if len(self.waves[self.curwave]) > self.high_pulses:
+                            self.high_pulses = len(self.waves[self.curwave])
+                        if self.waves[self.curwave][-1][2] > self.high_micros:
+                            self.high_micros = self.waves[self.curwave][-1][2]
                         self.wavequeue = self.wavequeue[1:]
                     # this was commented out so tests could pass despite underruns.
                     #if not self.pulsequeue:
@@ -140,6 +148,24 @@ class mock_pigpiod(multiprocessing.Process):
                             self.reply(s)
                         elif cmd == pigpio._PI_CMD_HC: # hardware_clock
                             self.reply(s)
+                        elif cmd == pigpio._PI_CMD_WVSM:
+                            if p1 == 0: # wave_get_micros
+                                self.reply(s, self.waves[self.curwave][-1][2] if self.curwave else 0)
+                            elif p1 == 1: # wave_get_high_micros
+                                self.reply(s, self.high_micros)
+                            elif p1 == 2: # wave_get_max_micros
+                                self.reply(s, 30 * 60 * 1000000) # from pigpio.h, 30 mins
+                            else:
+                                self.reply(s, -44) # PI_BAD_WVSM_COMMND bad WVSM subcommand
+                        elif cmd == pigpio._PI_CMD_WVSP:
+                            if p1 == 0: # wave_get_pulses
+                                self.reply(s, len(self.waves[self.curwave]) if self.curwave else 0)
+                            elif p1 == 1: # wave_get_high_pulses
+                                self.reply(s, self.high_pulses)
+                            elif p1 == 2: # wave_get_max_pulses
+                                self.reply(s, 4 * 3000) # from pigpio.h
+                            else:
+                                self.reply(s, -45) # PI_BAD_WVSP_COMMND
                         elif cmd == pigpio._PI_CMD_MODES: # set_mode
                             self.modes[p1] = p2
                             self.reply(s)

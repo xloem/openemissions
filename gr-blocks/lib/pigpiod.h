@@ -33,6 +33,7 @@ public:
   std::list<int> d_waveforms_in_flight;
 
   gr::thread::mutex d_mtx;
+  gr::thread::condition_variable d_cond;
 
 private:
   /*needs_lock*/ pigpiod(std::string const & address);

@@ -1,6 +1,7 @@
 id: openemissions_pigpio_sink
 label: PiGPIO Sink
 category: '[openemissions]'
+flags: [ throttle, python, cpp ]
 
 templates:
     imports: import openemissions
