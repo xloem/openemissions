@@ -29,7 +29,6 @@ parameters:
     label: Sample Rate
     dtype: real
     default: samp_rate
-    hide: part
 -   id: vlen
     label: Vec Length
     dtype: int
