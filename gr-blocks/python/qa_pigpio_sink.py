@@ -12,13 +12,13 @@ tracemalloc.start()
 from gnuradio import gr, gr_unittest
 from gnuradio import blocks
 try:
-    from openemissions import pigpio_sink_float, pigpio_sink_int, pigpio_sink_short, pigpio_sink_byte
+    from openemissions import *
 except ImportError:
     import os
     import sys
     dirname, filename = os.path.split(os.path.abspath(__file__))
     sys.path.append(os.path.join(dirname, "bindings"))
-    from openemissions import pigpio_sink
+    from openemissions import *
 
 
 # pigpiod is a daemon that runs on a raspberry pi to provide gpio access.
@@ -312,6 +312,7 @@ class qa_pigpio_sink (gr_unittest.TestCase):
         instance_int = pigpio_sink_int (1000, address = pigpiod.address)
         instance_short = pigpio_sink_short (1000, address = pigpiod.address)
         instance_byte = pigpio_sink_byte (1000, address = pigpiod.address)
+        instance_bit = pigpio_sink_bit (1000, address = pigpiod.address)
 
     def test_001_descriptive_test_name (self):
         pigpiod = mock_pigpiod()

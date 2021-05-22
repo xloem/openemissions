@@ -14,7 +14,7 @@
 /* BINDTOOL_GEN_AUTOMATIC(0)                                                       */
 /* BINDTOOL_USE_PYGCCXML(0)                                                        */
 /* BINDTOOL_HEADER_FILE(pigpio_sink.h)                                             */
-/* BINDTOOL_HEADER_FILE_HASH(2463537d142dcd808f75bc8f1136af3f)                     */
+/* BINDTOOL_HEADER_FILE_HASH(14d89953a737c96b5e78f0c1a1c7c55a)                     */
 /***********************************************************************************/
 
 #include <pybind11/complex.h>
@@ -58,4 +58,5 @@ void bind_pigpio_sink(py::module& m)
     bind_pigpio_sink_template<int>(m, "pigpio_sink_int");
     bind_pigpio_sink_template<short>(m, "pigpio_sink_short");
     bind_pigpio_sink_template<signed char>(m, "pigpio_sink_byte");
+    bind_pigpio_sink_template<bool>(m, "pigpio_sink_bit");
 }

@@ -446,6 +446,7 @@ template class pigpio_sink<float>;
 template class pigpio_sink<int>;
 template class pigpio_sink<short>;
 template class pigpio_sink<signed char>;
+template class pigpio_sink<bool>;
 
 } /* namespace openemissions */
 } /* namespace gr */

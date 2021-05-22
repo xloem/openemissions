@@ -20,20 +20,15 @@ parameters:
     label: Input Type
     dtype: enum
     default: float
-    options: [float, int, short, byte]
-    option_labels: ["Float", "Int", "Short", "Byte"]
+    options: [float, int, short, byte, bit]
+    option_labels: ["Float", "Int", "Short", "Byte", "Bit"]
     option_attributes:
-        size: [gr.sizeof_float, gr.sizeof_int, gr.sizeof_short, gr.sizeof_char]
+        size: [gr.sizeof_float, gr.sizeof_int, gr.sizeof_short, gr.sizeof_char, gr.sizeof_char]
     hide: part
 -   id: samples_per_second
     label: Sample Rate
     dtype: real
     default: samp_rate
--   id: vlen
-    label: Vec Length
-    dtype: int
-    default: '1'
-    hide: ${ 'part' if vlen == 1 else 'none' }
 -   id: pin
     label: Pin
     default: '4'
@@ -56,10 +51,12 @@ parameters:
     default: '30000000'
     dtype: int
     category: Advanced
+    hide: ${ 'part' if hardware_clock_frequency == 30000000 else 'none' }
 -   id: pad_milliamps
     label: GPIO Pad Milliamps
     default: '0'
     dtype: int
+    hide: ${ 'part' if pad_milliamps == 0 else 'none' }
   
 #  Make one 'inputs' list entry per input and one 'outputs' list entry per output.
 #  Keys include:

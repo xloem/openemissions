@@ -27,12 +27,13 @@ public:
   typedef std::shared_ptr<pigpio_sink<T>> sptr;
 
   /*!
-   * \param[in] samp_rate Samples per second of input
+   * \param[in] samples_per_second Sample rate of input
    * \param[in] pin GPIO to send output on
    * \param[in] level Pin is changed when input crosses this value
    * \param[in] address Host of pigpiod to connect to
    * \param[in] wave_buffer_percent Portion of the device dma resources to allocate for each waveform.  TODO: when this is very small, send smaller waves to not run out of CBs
    * \param[in] hardware_clock_frequency For pins with a hardware clock, frequency to set the clock to
+   * \param[in] pad_milliamps If set, the entire bank of gpios will be reconfigured to this output current
    */
   static sptr make(double samples_per_second,
                    unsigned pin = 4,
