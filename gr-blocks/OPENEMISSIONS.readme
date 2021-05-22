@@ -4,11 +4,25 @@ Gnuradio blocks are all documented at the gnuradio wiki.
 Everyone's goal of course is a general-purpose workbench, but you have to start somewhere.
 
 Pad Crop Block:
-    This is useful for organising wave periods together while adjusting theorised periods.
-            note: there may be helpful blocks under Resamplers to shrink the waves for display if the sample rate is high
-                  rescaling could also be added to pad/crop, or sdl video, but gnuradio's way seems to be to use a hier block to move towards user design
+    Made before learning of the time raster sink's column parameter, for organising theoriesed packets together.
+    Likely useful later for isolating subportions of signals or their ffts.
+    Make these:
+        A signal source containing clocked packets, such as the noiscillate generator, a radio, or a square wave summed with a noise source
+        Gui Widgets->QT->QT GUI Range
+            Change properties:
+                id: packet_rate
+                label: Packet Frequency
+                Default Value: guess the packet frequency (this can also be calculated from a double fft or double autocorrelation as the first peak)
+                Start: minimum guess
+                Stop: maximum guess
+                Step: [guessed frequency] / samp_rate
     Connect these:
-        Stream Tag Tools->Stream to Tagged Stream
+        Type Converters->Complex to Mag^2 (or anything else that outputs float or byte)
+        Instrumentation->QT->QT GUI Time Raster Sink
+            Change properties:
+                Num. Cols: int(samp_rate / packet_rate + 0.5)
+
+    Now 
                         configure this to guess the period of the waveform
         openemissions->Tagged Stream Pad/Crop
         Video->Video SDL Sink
@@ -27,7 +41,7 @@ PiGPIO Sink Block:
                         oscillate power to a device using a relay
                         now the same flowgraph can be used mathematically to compare the signal environment with and without the device powered
 
-- [ ] reduce wave buffer percentage so it doesn't underrun
+- [X] reduce wave buffer percentage so it doesn't underrun
 - [ ] record direct signal to file, then switch to using antenna
 - [ ] start with a downsampled 40 hertz signal so we can do the juicy new stuff first before the signal drift recorrelation
 - [ ] accumulate well-known distribution of samples for each packet offset [might theoretically feed back into this once signal power is known, to recalibrate live]

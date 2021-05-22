@@ -13,5 +13,5 @@ install(FILES
     api.h
     pad_crop.h
     pigpio_sink.h
-    DESTINATION include/openemissions
+    histogram.h DESTINATION include/openemissions
 )
