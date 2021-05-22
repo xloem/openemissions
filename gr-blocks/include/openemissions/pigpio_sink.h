@@ -34,7 +34,7 @@ public:
    * \param[in] wave_buffer_percent Portion of the device dma resources to allocate for each waveform
    * \param[in] hardware_clock_frequency For pins with a hardware clock, frequency to set the clock to
    */
-  static sptr make(double samp_rate,
+  static sptr make(double samples_per_second,
                    unsigned pin = 4,
                    T level = 0,
                    const std::string &address = "127.0.0.1:8888",

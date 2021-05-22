@@ -35,8 +35,8 @@ PiGPIO Sink Block:
             {foreground model: gives probability distribution given time-point}
 - [ ] accumulate distribution of samples of background noise from waveform of known zero times
             if there are things near the tuning frequency, there will be periodic components here, and using a frequency transform could give better prediction
-                a missing item here is phase-adjusting an fft for a given time point.  then the different background things could be merged or turned into an fft distribution.
-                    might be algorithmically/cognitively clearest to invert+scale the fft, then shift-rotate it, then re-fft it.
+                if the data is treated as short real-valued FFTs, or downsampled below the receiver bandwidth, then changes from real signals could really decrease
+                ffts could also be phase-aligned, most simplistically by rotating their data, or the data could be treated as one big frequency-domain chunk
             {background model: gives probability distribution given time-point}
 - [ ] loop to identify power distribution:
         for each packet offset:

@@ -33,7 +33,7 @@ public:
   /*
    * The private constructor
    */
-  pigpio_sink_impl(double samp_rate,
+  pigpio_sink_impl(double samples_per_second,
                    unsigned pin,
                    T level,
                    const std::string &address,
@@ -51,7 +51,7 @@ public:
         .d_accumulated_us = 0
     },
     d_level(level),
-    d_sample_rate(samp_rate),
+    d_sample_rate(samples_per_second),
     d_hardware_clock_frequency(0),
     d_wave_buffer_percent(wave_buffer_percent)
   {
@@ -424,7 +424,7 @@ private:
 
 template <typename T>
 typename pigpio_sink<T>::sptr
-pigpio_sink<T>::make(double samp_rate,
+pigpio_sink<T>::make(double samples_per_second,
                      unsigned pin,
                      T cutoff,
                      const std::string& address,
@@ -433,7 +433,7 @@ pigpio_sink<T>::make(double samp_rate,
                      unsigned pad_milliamps)
 {
   return gnuradio::make_block_sptr<pigpio_sink_impl<T>>(
-    samp_rate,
+    samples_per_second,
     pin,
     cutoff,
     address,
