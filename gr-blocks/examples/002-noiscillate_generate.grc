@@ -36,7 +36,7 @@ blocks:
   id: variable
   parameters:
     comment: ''
-    value: '320'
+    value: '1000000'
   states:
     bus_sink: false
     bus_source: false
@@ -80,7 +80,7 @@ blocks:
     samples_per_second: samp_rate
     type: float
     vlen: '1'
-    wave_buffer_percent: '50'
+    wave_buffer_percent: '25'
   states:
     bus_sink: false
     bus_source: false

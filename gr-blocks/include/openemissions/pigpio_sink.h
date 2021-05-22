@@ -31,7 +31,7 @@ public:
    * \param[in] pin GPIO to send output on
    * \param[in] level Pin is changed when input crosses this value
    * \param[in] address Host of pigpiod to connect to
-   * \param[in] wave_buffer_percent Portion of the device dma resources to allocate for each waveform
+   * \param[in] wave_buffer_percent Portion of the device dma resources to allocate for each waveform.  TODO: when this is very small, send smaller waves to not run out of CBs
    * \param[in] hardware_clock_frequency For pins with a hardware clock, frequency to set the clock to
    */
   static sptr make(double samples_per_second,

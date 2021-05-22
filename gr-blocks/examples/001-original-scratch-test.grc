@@ -214,24 +214,25 @@ blocks:
 - name: openemissions_pigpio_sink_0
   id: openemissions_pigpio_sink
   parameters:
-    address: 127.0.0.1:8888
+    address: 169.254.237.219:8888
     affinity: ''
     alias: ''
     comment: ''
     hardware_clock_frequency: '30000000'
     level: '0'
+    pad_milliamps: '0'
     pin: '4'
     samples_per_second: samp_rate
     type: byte
     vlen: '1'
-    wave_buffer_percent: '50'
+    wave_buffer_percent: '25'
   states:
     bus_sink: false
     bus_source: false
     bus_structure: null
     coordinate: [1312, 416.0]
     rotation: 0
-    state: disabled
+    state: enabled
 - name: qtgui_time_sink_x_0
   id: qtgui_time_sink_x
   parameters:
