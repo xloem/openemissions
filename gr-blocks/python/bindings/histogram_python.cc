@@ -14,7 +14,7 @@
 /* BINDTOOL_GEN_AUTOMATIC(0)                                                       */
 /* BINDTOOL_USE_PYGCCXML(0)                                                        */
 /* BINDTOOL_HEADER_FILE(histogram.h)                                               */
-/* BINDTOOL_HEADER_FILE_HASH(57bd0fce5a8ea37258c9240d2df0d814)                     */
+/* BINDTOOL_HEADER_FILE_HASH(306e4dd74e4293ae2195f39d3b2e6e4c)                     */
 /***********************************************************************************/
 
 #include <pybind11/complex.h>
@@ -41,6 +41,7 @@ void bind_histogram_template(py::module& m, const char* classname)
            py::arg("min"),
            py::arg("max"),
            py::arg("nbuckets") = 1024,
+           py::arg("vinlen") = 1,
            D(histogram,make)
         ) ;
 

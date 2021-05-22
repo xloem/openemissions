@@ -4,7 +4,7 @@ category: '[openemissions]'
 
 templates:
     imports: import openemissions
-    make: openemissions.histogram_${type.fnc}(${min}, ${max}, ${nbuckets})
+    make: openemissions.histogram_${type.fnc}(${min}, ${max}, ${nbuckets}, ${vinlen})
     callbacks:
     - set_min(${min})
     - set_max(${max})
@@ -38,6 +38,11 @@ parameters:
     label: Maximum
     dtype: ${input_type}
     default: ${input_type.max_guess}
+-   id: vinlen
+    label: Input Vec Length
+    dtype: int
+    default: '1'
+    hide: ${ 'part' if vinlen == 1 else 'none' }
 -   id: nbuckets
     label: Histogram Vec Length
     dtype: int

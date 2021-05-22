@@ -19,22 +19,24 @@ class histogram_impl : public histogram<input_type, freq_type>
   private:
   input_type d_min;
   input_type d_max;
+  std::vector<uint64_t> d_histogram;
+  const size_t d_vinlen;
   double d_value_to_bucket_coeff;
   double d_value_to_bucket_offset;
-  std::vector<uint64_t> d_histogram;
   uint64_t d_total;
 
   public:
   /*
    * The private constructor
    */
-  histogram_impl(input_type min, input_type max, size_t nbuckets)
+  histogram_impl(input_type min, input_type max, size_t nbuckets, size_t vinlen)
   : gr::sync_block("histogram",
-                   gr::io_signature::make(1, 1, sizeof(input_type)),
+                   gr::io_signature::make(1, 1, sizeof(input_type) * vinlen),
                    gr::io_signature::make(1, 1, sizeof(freq_type) * nbuckets)),
     d_min(min),
     d_max(max),
     d_histogram(nbuckets, 0),
+    d_vinlen(vinlen),
     d_total(0)
   {
     update_coeff();
@@ -55,16 +57,18 @@ class histogram_impl : public histogram<input_type, freq_type>
     freq_type *out = reinterpret_cast<freq_type *>(output_items[0]);
     bool warned = false;
 
-    for (int sample = 0; sample < noutput_items; sample ++)
+    for (int sample = 0; sample < noutput_items * d_vinlen; sample += d_vinlen)
     {
-      input_type value = in[sample];
-      if (value >= d_min && value < d_max) {
-        size_t bucket = value * d_value_to_bucket_coeff + d_value_to_bucket_offset;
-        d_histogram[bucket] ++;
-        d_total ++;
-      } else if (!warned) {
-        GR_LOG_WARN(this->d_logger, "value " + std::to_string(value) + " outside histogram range [" + std::to_string(d_min) + ", " + std::to_string(d_max) + ")");
-        warned = true;
+      for (int subsample = sample; subsample < sample + d_vinlen; subsample ++) {
+        input_type value = in[subsample];
+        if (value >= d_min && value < d_max) {
+          size_t bucket = value * d_value_to_bucket_coeff + d_value_to_bucket_offset;
+          d_histogram[bucket] ++;
+          d_total ++;
+        } else if (!warned) {
+          GR_LOG_WARN(this->d_logger, "value " + std::to_string(value) + " outside histogram range [" + std::to_string(d_min) + ", " + std::to_string(d_max) + ")");
+          warned = true;
+        }
       }
       
       if (std::is_floating_point<freq_type>::value) {
@@ -126,9 +130,9 @@ private:
 
 template <typename input_type, typename freq_type>
 typename histogram<input_type, freq_type>::sptr
-histogram<input_type, freq_type>::make(input_type min, input_type max, size_t nbuckets)
+histogram<input_type, freq_type>::make(input_type min, input_type max, size_t nbuckets, size_t vinlen)
 {
-  return gnuradio::make_block_sptr<histogram_impl<input_type, freq_type>>(min, max, nbuckets);
+  return gnuradio::make_block_sptr<histogram_impl<input_type, freq_type>>(min, max, nbuckets, vinlen);
 }
 
 template class histogram<double, double>;

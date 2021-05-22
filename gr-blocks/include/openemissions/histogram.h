@@ -15,7 +15,7 @@ namespace gr {
 namespace openemissions {
 
 /*!
- * \brief <+description of block+>
+ * \brief Per-sample histograms
  * \ingroup openemissions
  *
  */
@@ -27,13 +27,12 @@ class OPENEMISSIONS_API histogram : virtual public gr::sync_block {
   /*!
    * \brief Return a shared_ptr to a new instance of
    *openemissions::histogram.
-   *
-   * To avoid accidental use of raw pointers, openemissions::histogram's
-   * constructor is in a private implementation
-   * class. openemissions::histogram::make is the public interface for
-   * creating new instances.
+   * \param[in] min Smallest value at the start of the histogram
+   * \param[in] max Tail of the histogram; values at this level will be excluded
+   * \param[in] nbuckets Vector length of the output; number of histogram buckets
+   * \param[in] vinlen Vector length of the input; samples will be consolidated together
    */
-  static sptr make(input_type min, input_type max, size_t nbuckets);
+  static sptr make(input_type min, input_type max, size_t nbuckets = 1024, size_t vinlen = 1);
 
   virtual void set_min(input_type min) = 0;
   virtual input_type min() const = 0;
