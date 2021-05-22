@@ -38,7 +38,7 @@ public:
                    unsigned pin = 4,
                    T level = 0,
                    const std::string &address = "127.0.0.1:8888",
-                   int wave_buffer_percent = 50,
+                   int wave_buffer_percent = 25,
                    unsigned hardware_clock_frequency = 30000000,
                    unsigned pad_milliamps = 0);
 

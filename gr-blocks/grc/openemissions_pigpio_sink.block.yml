@@ -48,7 +48,7 @@ parameters:
     dtype: string
 -   id: wave_buffer_percent
     label: DMA Buffer Percent per Wave
-    default: '50'
+    default: '25'
     dtype: int
     category: Advanced
 -   id: hardware_clock_frequency
