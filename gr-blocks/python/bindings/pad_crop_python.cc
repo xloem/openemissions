@@ -14,7 +14,7 @@
 /* BINDTOOL_GEN_AUTOMATIC(1)                                                       */
 /* BINDTOOL_USE_PYGCCXML(0)                                                        */
 /* BINDTOOL_HEADER_FILE(pad_crop.h)                                        */
-/* BINDTOOL_HEADER_FILE_HASH(20875316fce4c0f441fcdfd3a1a85a66)                     */
+/* BINDTOOL_HEADER_FILE_HASH(3b730bd5373cadecf74086ae47d5a58e)                     */
 /***********************************************************************************/
 
 #include <pybind11/complex.h>
@@ -33,11 +33,8 @@ void bind_pad_crop(py::module& m)
     using pad_crop    = gr::openemissions::pad_crop;
 
 
-    py::class_<pad_crop,
-               gr::tagged_stream_block,
-               gr::block,
-               gr::basic_block,
-               std::shared_ptr<pad_crop>>(m, "pad_crop")
+    py::class_<pad_crop, gr::tagged_stream_block, gr::block, gr::basic_block,
+        std::shared_ptr<pad_crop>>(m, "pad_crop", D(pad_crop))
 
         .def(py::init(&pad_crop::make),
            py::arg("itemsize"),
@@ -46,22 +43,5 @@ void bind_pad_crop(py::module& m)
            py::arg("pad") =  true,
            py::arg("crop") =  true,
            D(pad_crop,make)
-        )
-        
-
-
-
-        ;
-
-
-
-
+        ) ;
 }
-
-
-
-
-
-
-
-

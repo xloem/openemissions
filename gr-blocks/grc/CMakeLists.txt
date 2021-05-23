@@ -10,5 +10,5 @@ install(FILES
     openemissions_pigpio_sink.block.yml
     openemissions_pad_crop.block.yml
     openemissions_histogram.block.yml
-    DESTINATION share/gnuradio/grc/blocks
+    openemissions_accumulate.block.yml DESTINATION share/gnuradio/grc/blocks
 )

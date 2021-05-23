@@ -27,7 +27,6 @@ class qa_histogram(gr_unittest.TestCase):
         self.tb = None
 
     def test_instance(self):
-        # FIXME: Test will fail until you pass sensible arguments to the constructor
         instance = histogram_f32_f32(-1, 1)
 
     def test_001_descriptive_test_name(self):

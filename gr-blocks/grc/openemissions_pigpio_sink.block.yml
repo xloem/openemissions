@@ -29,6 +29,11 @@ parameters:
     label: Sample Rate
     dtype: real
     default: samp_rate
+-   id: vlen
+    label: Vec Length
+    dtype: int
+    default: '1'
+    hide: ${ 'part' if vlen == 1 else 'none' }
 -   id: pin
     label: Pin
     default: '4'
@@ -57,6 +62,7 @@ parameters:
     default: '0'
     dtype: int
     hide: ${ 'part' if pad_milliamps == 0 else 'none' }
+
   
 #  Make one 'inputs' list entry per input and one 'outputs' list entry per output.
 #  Keys include:

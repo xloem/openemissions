@@ -1,0 +1,57 @@
+id: openemissions_accumulate
+label: accumulate
+category: '[openemissions]'
+
+templates:
+    imports: import openemissions
+    make: openemissions.accumulate_${type}(${average}, ${len_tag_key}, ${reset_tag_key})
+
+parameters:
+-   id: type
+    label: Data Type
+    dtype: enum
+    default: f32
+    options: [c64, c32, f64, f32, s64, int]
+    option_labels: ["Complex Double", "Complex Float", "Double", "Float", "Int64", "Int"]
+    hide: part
+-   id: average
+    label: Take the mean?
+    dtype: bit
+    default: True
+-   id: len_tag_key
+    label: Packet Length Tag Key
+    default: "packet_len"
+-   id: reset_tag_key
+    label: Reset Tag Key
+    default: "reset_sum"
+
+inputs:
+-   label: Input Stream
+    domain: stream
+    dtype: ${ type }
+-   label: Input Density
+    domain: stream
+    dtype: ${ type }
+    optional: 1
+
+outputs:
+-   label: Accumulation Stream
+    domain: stream
+    dtype: ${ type }
+-   label: Accumulation Density
+    domain: stream
+    dtype: ${ type }
+    optional: 1
+
+documentation: |-
+    Accumulates each packet onto all the last, streaming out their integral.
+    
+    The optional density streams contain the counts of the samples accumulated
+    into the main streams.
+
+    When the reset tag key is seen, the accumulator is immediately emptied for the
+    next following sample.  The tag is preserved into the output.  If a value is
+    attached to the tag, the accumulator is multiplied by that value rather than
+    emptied.
+
+file_format: 1

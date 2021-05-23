@@ -21,6 +21,7 @@ list(APPEND openemissions_sources
     pigpio_sink_impl.cc
     pigpiod.cc
     histogram_impl.cc
+    accumulate_impl.cc
 )
 
 set(openemissions_sources "${openemissions_sources}" PARENT_SCOPE)

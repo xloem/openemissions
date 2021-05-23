@@ -20,6 +20,15 @@ class OPENEMISSIONS_API pad_crop : virtual public tagged_stream_block
 public:
   typedef std::shared_ptr<pad_crop> sptr;
 
+  /*!
+   * Make a pad crop block.
+   *
+   * \param itemsize The size (in bytes) of the item datatype.
+   * \param length The length (in items) after padding or cropping.
+   * \param len_tag_key Name of the TSB's length tag key.
+   * \param pad Pad up to the length?
+   * \param crop Crop down to the length?
+   */
   static sptr make(size_t itemsize,
                    size_t length,
                    const std::string& len_tag_key="packet_len",

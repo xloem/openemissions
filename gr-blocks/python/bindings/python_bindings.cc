@@ -24,6 +24,7 @@ namespace py = pybind11;
     void bind_pigpio_sink(py::module& m);
     void bind_pad_crop(py::module& m);
     void bind_histogram(py::module& m);
+    void bind_accumulate(py::module& m);
 // ) END BINDING_FUNCTION_PROTOTYPES
 
 
@@ -55,5 +56,6 @@ PYBIND11_MODULE(openemissions_python, m)
     bind_pigpio_sink(m);
     bind_pad_crop(m);
     bind_histogram(m);
+    bind_accumulate(m);
     // ) END BINDING_FUNCTION_CALLS
 }
