@@ -71,22 +71,12 @@ private:
 
   struct histogram_t {
     std::vector<uint64_t> d_overall;
-    struct tagged_stream_t {
-      std::vector<uint64_t> d_histogram;
-      size_t d_offset;
-    };
-    std::vector<tagged_stream_t> d_tagged_streams;
-    using tagged_stream_iterator = typename std::vector<tagged_stream_t>::iterator;
     uint64_t d_total;
   };
 
   std::unordered_map<pmt::pmt_t, size_t> d_prop_tag_idxs;
   using prop_iterator = typename std::unordered_map<pmt::pmt_t, size_t>::iterator;
   std::vector<pmt::pmt_t> d_prop_tags;
-
-  std::unordered_map<pmt::pmt_t, size_t> d_len_tag_idxs;
-  using len_iterator = typename std::unordered_map<pmt::pmt_t, size_t>::iterator;
-  std::vector<size_t> d_tagged_stream_lengths;
 
   std::unordered_map<std::vector<pmt::pmt_t>, histogram_t> d_histograms;
   using hist_iterator = typename std::unordered_map<std::vector<pmt::pmt_t>, histogram_t>::iterator;
@@ -100,24 +90,20 @@ public:
   /*
    * The private constructor
    */
-  histogram_impl(input_type min, input_type max, size_t nbuckets, size_t vinlen, const std::vector<std::string> & prop_tag_keys, const std::vector<std::string> & len_tag_keys, const std::string & filename)
+  histogram_impl(input_type min, input_type max, size_t nbuckets, size_t vinlen, const std::vector<std::string> & prop_tag_keys, const std::string & filename)
   : gr::sync_block("histogram",
                    gr::io_signature::make(1, 1, sizeof(input_type) * vinlen),
-                   gr::io_signature::make(1, 1 + len_tag_keys.size(), sizeof(freq_type) * nbuckets)),
+                   gr::io_signature::make(1, 1, sizeof(freq_type) * nbuckets)),
     d_min(min),
     d_max(max),
     d_nbuckets(nbuckets),
     d_vinlen(vinlen),
     d_prop_tags(prop_tag_keys.size(), pmt::PMT_NIL),
-    d_tagged_stream_lengths(len_tag_keys.size(), 0),
     d_histogram(nullptr)
   {
     update_coeff();
     for (size_t w = 0; w < prop_tag_keys.size(); w ++) {
       d_prop_tag_idxs[pmt::string_to_symbol(prop_tag_keys[w])] = w;
-    }
-    for (size_t w = 0; w < len_tag_keys.size(); w ++) {
-      d_len_tag_idxs[pmt::string_to_symbol(len_tag_keys[w])] = w;
     }
   }
 
@@ -129,8 +115,8 @@ public:
 
   // Where all the action really happens
   int work(int noutput_items,
-           gr_vector_const_void_star &input_items,
-           gr_vector_void_star &output_items)
+      gr_vector_const_void_star &input_items,
+      gr_vector_void_star &output_items)
   {
     const input_type *in = reinterpret_cast<const input_type *>(input_items[0]);
     freq_type *out = reinterpret_cast<freq_type *>(output_items[0]);
@@ -156,22 +142,6 @@ public:
           size_t idx = prop_it->second;
           d_prop_tags[idx] = tag.value;
           d_histogram = nullptr;
-        } else {
-          len_iterator len_it = d_len_tag_idxs.find(tag.key);
-          if (len_it != d_len_tag_idxs.end()) {
-            // found a length tag
-            size_t idx = len_it->second;
-            size_t & max_len = d_tagged_stream_lengths[idx];
-            size_t len = pmt::to_long(tag.value);
-            if (len > max_len) {
-              for (hist_iterator it = d_histograms.begin(); it != d_histograms.end(); it ++) {
-                typename histogram_t::tagged_stream_t & tagged_histogram = it->second.d_tagged_streams[idx];
-                tagged_histogram.d_offset = 0;
-                tagged_histogram.d_histogram.resize(len * d_nbuckets, 0);
-              }
-              max_len = len;
-            }
-          }
         }
         ++ tag_it;
       }
@@ -181,12 +151,6 @@ public:
         if (d_histogram->d_overall.empty()) {
           d_histogram->d_overall.reserve(d_nbuckets);
           d_histogram->d_overall.resize(d_nbuckets);
-          d_histogram->d_tagged_streams.resize(d_tagged_stream_lengths.size());
-          for (size_t w = 0; w < d_tagged_stream_lengths.size(); w ++) {
-            size_t len = d_tagged_stream_lengths[w];
-            d_histogram->d_tagged_streams[w].d_histogram.resize(len * d_nbuckets, 0);
-            d_histogram->d_tagged_streams[w].d_offset = 0;
-          }
           d_histogram->d_total = 0;
         }
       }
@@ -196,10 +160,6 @@ public:
         if (value >= d_min && value < d_max) {
           size_t bucket = value * d_value_to_bucket_coeff + d_value_to_bucket_offset;
           d_histogram->d_overall[bucket] ++;
-          for (size_t idx = 0; idx < d_tagged_stream_lengths.size(); idx ++) {
-            typename histogram_t::tagged_stream_t & tagged_histogram = d_histogram->d_tagged_streams[idx];
-            tagged_histogram.d_histogram[tagged_histogram.d_offset + bucket] ++;
-          }
           d_histogram->d_total ++;
         } else if (!warned) {
           GR_LOG_WARN(this->d_logger, "value " + std::to_string(value) + " outside histogram range [" + std::to_string(d_min) + ", " + std::to_string(d_max) + ")");
@@ -212,33 +172,12 @@ public:
           *out = freq_type(d_histogram->d_overall[bucket]) / d_histogram->d_total;
           out ++;
         } 
-        for (size_t idx = 0; idx < d_tagged_stream_lengths.size(); idx ++) {
-          typename histogram_t::tagged_stream_t & tagged_histogram = d_histogram->d_tagged_streams[idx];
-          size_t bucket = tagged_histogram.d_offset;
-          size_t tail = bucket + d_nbuckets;
-          if (idx < outs.size()) {
-            for (; bucket < tail; bucket ++) {
-              *outs[idx] = freq_type(tagged_histogram.d_histogram[bucket]) / d_histogram->d_total;
-              outs[idx] ++;
-            }
-          }
-          tagged_histogram.d_offset = tail;
-        }
       } else {
         memcpy(out, d_histogram->d_overall.data(), sizeof(freq_type) * d_nbuckets);
         out += d_nbuckets;
-        for (size_t idx = 0; idx < d_tagged_stream_lengths.size(); idx ++) {
-          typename histogram_t::tagged_stream_t & tagged_histogram = d_histogram->d_tagged_streams[idx];
-          if (idx < outs.size()) {
-            memcpy(outs[idx], &tagged_histogram.d_histogram[tagged_histogram.d_offset], sizeof(freq_type) * d_nbuckets);
-                outs[idx] += d_nbuckets;
-          }
-          tagged_histogram.d_offset += d_nbuckets;
-        }
       }
     }
-  
-    // Tell runtime system how many output items we produced.
+
     return noutput_items;
   }
 
@@ -289,9 +228,9 @@ private:
 
 template <typename input_type, typename freq_type>
 typename histogram<input_type, freq_type>::sptr
-histogram<input_type, freq_type>::make(input_type min, input_type max, size_t nbuckets, size_t vinlen, const std::vector<std::string> & prop_tag_keys, const std::vector<std::string> & len_tag_keys, const std::string & filename)
+histogram<input_type, freq_type>::make(input_type min, input_type max, size_t nbuckets, size_t vinlen, const std::vector<std::string> & prop_tag_keys, const std::string & filename)
 {
-  return gnuradio::make_block_sptr<histogram_impl<input_type, freq_type>>(min, max, nbuckets, vinlen, prop_tag_keys, len_tag_keys, filename);
+  return gnuradio::make_block_sptr<histogram_impl<input_type, freq_type>>(min, max, nbuckets, vinlen, prop_tag_keys, filename);
 }
 
 template class histogram<double, double>;

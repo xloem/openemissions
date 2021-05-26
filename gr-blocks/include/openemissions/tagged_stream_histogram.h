@@ -5,11 +5,11 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#ifndef INCLUDED_OPENEMISSIONS_HISTOGRAM_H
-#define INCLUDED_OPENEMISSIONS_HISTOGRAM_H
+#ifndef INCLUDED_OPENEMISSIONS_TAGGED_STREAM_HISTOGRAM_H
+#define INCLUDED_OPENEMISSIONS_TAGGED_STREAM_HISTOGRAM_H
 
 #include <openemissions/api.h>
-#include <gnuradio/sync_block.h>
+#include <gnuradio/tagged_stream_block.h>
 
 namespace gr {
 namespace openemissions {
@@ -20,9 +20,9 @@ namespace openemissions {
  *
  */
 template <typename input_type, typename freq_type>
-class OPENEMISSIONS_API histogram : virtual public gr::sync_block {
+class OPENEMISSIONS_API tagged_stream_histogram : virtual public gr::tagged_stream_block {
   public:
-  typedef std::shared_ptr<histogram> sptr;
+  typedef std::shared_ptr<tagged_stream_histogram> sptr;
 
   /*!
    * \brief Return a shared_ptr to a new instance of
@@ -32,7 +32,7 @@ class OPENEMISSIONS_API histogram : virtual public gr::sync_block {
    * \param[in] nbuckets Vector length of the output; number of histogram buckets
    * \param[in] vinlen Vector length of the input; samples will be consolidated together
    */
-  static sptr make(input_type min, input_type max, size_t nbuckets = 1024, size_t vinlen = 1, const std::vector<std::string> & prop_tag_keys = {}, const std::string & filename = "");
+  static sptr make(input_type min, input_type max, size_t nbuckets = 1024, size_t vinlen = 1, const std::vector<std::string> & prop_tag_keys = {}, const std::string & len_tag_key = "packet_len", const std::string & filename = "");
 
   virtual void set_min(input_type min) = 0;
   virtual input_type min() const = 0;
@@ -41,11 +41,9 @@ class OPENEMISSIONS_API histogram : virtual public gr::sync_block {
   virtual input_type max() const = 0;
 
   virtual size_t nbuckets() const = 0;
-
-  virtual uint64_t total() const = 0;
 };
 
 } // namespace openemissions
 } // namespace gr
 
-#endif /* INCLUDED_OPENEMISSIONS_HISTOGRAM_H */
+#endif /* INCLUDED_OPENEMISSIONS_TAGGED_STREAM_HISTOGRAM_H */

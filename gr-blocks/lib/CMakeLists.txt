@@ -21,6 +21,7 @@ list(APPEND openemissions_sources
     pigpio_sink_impl.cc
     pigpiod.cc
     histogram_impl.cc
+    tagged_stream_histogram_impl.cc
     accumulate_impl.cc
 )
 

@@ -4,7 +4,7 @@ category: '[openemissions]'
 
 templates:
     imports: import openemissions
-    make: openemissions.histogram_${input_type.fnc}_${output_type.fnc}(${min}, ${max}, ${nbuckets}, ${vinlen}, ${prop_tag_keys.split(',' if ',' in prop_tag_keys else ' ')})
+    make: openemissions.histogram_${input_type.fnc}_${output_type.fnc}(${min}, ${max}, ${nbuckets}, ${vinlen}, ${prop_tag_keys.split(',' if ',' in prop_tag_keys else ' ')}, ${len_tag_key})
     callbacks:
     - set_min(${min})
     - set_max(${max})
@@ -52,6 +52,11 @@ parameters:
     dtype: string
     default: ''
     hide: ${ 'part' if prop_tag_keys == '' else 'none' }
+-   id: len_tag_key
+    label: Length Tag
+    dtype: string
+    default: 'packet_len'
+#    hide: ${ 'part' if len_tag_key == 'packet_len' else 'none' }
 
 #-   id: filename
 #    label: File
@@ -61,25 +66,35 @@ inputs:
 -   label: Input
     domain: stream
     dtype: ${ input_type }
-    vlen: 1
+    vlen: ${ vinlen }
+-   label: Count Multiplier
+    domain: stream
+    dtype: ${ input_type }
+    vlen: ${ vinlen }
+    optional: true
 
 outputs:
--   label: Overall Histograms
+-   label: Tagged Stream Histograms
     domain: stream
     dtype: ${ output_type }
     vlen: ${ nbuckets }
+-   label: Totals
+    domain: stream
+    dtype: ${ output_type }
+    vlen: ${ nbuckets}
+    optional: true
 
 asserts:
 -   ${ nbuckets > 1 }
 -   ${ max > min }
 
 documentation: |-
-    Sorts incoming samples into histogram buckets.  If the output datatype
-    can represent fractional values, they will be divided by the total count
+    Sorts incoming packet samples into histogram buckets.  If the output datatype
+    can represent fractional values, they will be divided by their total counts
     to represent relative frequency.
 
-    Every single sample, the complete histogram is output as a vector with
-    nbuckets items.
+    Every single sample, a complete histogram is output as a vector.  A different
+    histogram is kept for each offset into the packet.
 
     Only samples within the range [Minimum,Maximum) can be included.
 

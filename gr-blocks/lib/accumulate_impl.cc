@@ -21,6 +21,10 @@ private:
     std::vector<T> d_accumulator;
     std::vector<T> d_counter;
 
+    std::vector<std::vector<gr::tag_t>> d_work_tags;
+    std::vector<std::vector<gr::tag_t>::iterator> d_work_tag_its;
+    std::vector<int64_t> d_work_input_offsets;
+
 public:
     /*
      * The private constructor
@@ -63,14 +67,14 @@ public:
         }
 
         // grab the tags, and prepare iterators to walk them in parallel
-        std::vector<std::vector<gr::tag_t>> tags(input_items.size());
-        std::vector<std::vector<gr::tag_t>::iterator> tag_its(input_items.size());
-        std::vector<int64_t> input_offsets(input_items.size());
+        d_work_tags.resize(input_items.size());
+        d_work_tag_its.resize(input_items.size());
+        d_work_input_offsets.resize(input_items.size());
         int64_t output_offset = this->nitems_written(0);
         for (size_t input = 0; input < input_items.size(); input ++) {
-            this->get_tags_in_window(tags[input], input, 0, ninput_items[input]);
-            tag_its[input] = tags[input].begin();
-            input_offsets[input] = this->nitems_read(input);
+            this->get_tags_in_window(d_work_tags[input], input, 0, ninput_items[input]);
+            d_work_tag_its[input] = d_work_tags[input].begin();
+            d_work_input_offsets[input] = this->nitems_read(input);
         }
 
         // loop through each item of the accumulator, each packet sample
@@ -99,10 +103,10 @@ public:
 
             // process the tags to match where we are in iterating the accumulator
             for (size_t input = 0; input < input_items.size(); input ++) {
-                uint64_t item_offset = input_offsets[input] + item;
+                uint64_t item_offset = d_work_input_offsets[input] + item;
                 for (
-                    std::vector<gr::tag_t>::iterator & tag_it = tag_its[input];
-                    tag_it != tags[input].end() && tag_it->offset <= item_offset;
+                    std::vector<gr::tag_t>::iterator & tag_it = d_work_tag_its[input];
+                    tag_it != d_work_tags[input].end() && tag_it->offset <= item_offset;
                     tag_it ++
                 ) {
                     gr::tag_t tag = *tag_it;

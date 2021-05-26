@@ -14,5 +14,6 @@ install(FILES
     pad_crop.h
     pigpio_sink.h
     histogram.h
+    tagged_stream_histogram.h
     accumulate.h DESTINATION include/openemissions
 )
