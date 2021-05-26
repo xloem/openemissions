@@ -90,10 +90,10 @@ class qa_histogram(gr_unittest.TestCase):
             1/2, 0.0, 0.0, 1/2,
             0.0, 1/3, 0.0, 2/3,
             0.0, 2/4, 0.0, 2/4
-        ], sink_f32_f32_overall.data(), 7)
+        ], sink_f32_f32.data(), 7)
 
     def test_vinlen2(self):
-        hist_f32_f32 = histogram_f32_f32(-1, 1, nbuckets=4, vinlen=2)
+        hist_f32_f32 = histogram_f32_f32(-1, 1, nbuckets=4, vinlen=2, prop_tag_keys=[self.id_key])
         src_f32_f32 = blocks.vector_source_f(
             data = [
                 0.75, -0.25,
