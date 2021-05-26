@@ -32,7 +32,7 @@ class OPENEMISSIONS_API histogram : virtual public gr::sync_block {
    * \param[in] nbuckets Vector length of the output; number of histogram buckets
    * \param[in] vinlen Vector length of the input; samples will be consolidated together
    */
-  static sptr make(input_type min, input_type max, size_t nbuckets = 1024, size_t vinlen = 1);
+  static sptr make(input_type min, input_type max, size_t nbuckets = 1024, size_t vinlen = 1, const std::vector<std::string> & prop_tag_keys = {}, const std::vector<std::string> & len_tag_keys = {}, const std::string & filename = "");
 
   virtual void set_min(input_type min) = 0;
   virtual input_type min() const = 0;

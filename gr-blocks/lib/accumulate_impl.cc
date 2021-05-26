@@ -21,7 +21,6 @@ private:
     std::vector<T> d_accumulator;
     std::vector<T> d_counter;
 
-
 public:
     /*
      * The private constructor
