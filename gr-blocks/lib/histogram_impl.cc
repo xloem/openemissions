@@ -17,9 +17,7 @@
 
 static size_t pmt_hash(pmt::pmt_t const &val)
 {
-  if (!val) {
-    return std::hash<pmt::pmt_t>{}(pmt::PMT_NIL);
-  } else if (val->is_symbol() || val->is_null()) {
+  if (val->is_symbol() || val->is_null()) {
     return std::hash<pmt::pmt_t>{}(val);
   } else if (val->is_bool()) {
     return std::hash<bool>{}(val == pmt::PMT_T);
@@ -110,8 +108,8 @@ public:
     d_max(max),
     d_nbuckets(nbuckets),
     d_vinlen(vinlen),
-    d_prop_tags(prop_tag_keys.size()),
-    d_tagged_stream_lengths(len_tag_keys.size(), 1),
+    d_prop_tags(prop_tag_keys.size(), pmt::PMT_NIL),
+    d_tagged_stream_lengths(len_tag_keys.size(), 0),
     d_histogram(nullptr)
   {
     update_coeff();

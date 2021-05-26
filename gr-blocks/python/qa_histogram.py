@@ -23,6 +23,8 @@ def tag(offset, key, value = None):
         value = gr.pmt.from_double(value)
     elif np.issubdtype(type(value), np.integer):
         value = gr.pmt.from_long(value)
+    elif type(value) is str:
+        value = gr.pmt.string_to_symbol(value)
     if type(key) is str:
         key = gr.pmt.string_to_symbol(key)
     return gr.tag_utils.python_to_tag((offset, key, value))
@@ -126,7 +128,7 @@ class qa_histogram(gr_unittest.TestCase):
     #    ], sink_f32_f32.data(), 7)
 
     def test_vinlen2_proptags(self):
-        f32_f32 = histogram_f32_f32(-1, 1, nbuckets=4, vinlen=2)
+        f32_f32 = histogram_f32_f32(-1, 1, nbuckets=4, vinlen=2, prop_tag_keys=[self.id_key])
         src = blocks.vector_source_f(
             data = [
                 0.75, -0.25,
