@@ -97,7 +97,7 @@ public:
   tagged_stream_histogram_impl(input_type min, input_type max, size_t nbuckets, size_t vinlen, const std::vector<std::string> & prop_tag_keys, const std::string & len_tag_key, const std::string & filename)
   : gr::tagged_stream_block("tagged_stream_histogram",
                             gr::io_signature::make(1, 2, sizeof(input_type) * vinlen),
-                            gr::io_signature::make(1, 2, sizeof(freq_type) * nbuckets),
+                            gr::io_signature::make(1, 1, sizeof(freq_type) * nbuckets),
                             len_tag_key),
     d_min(min),
     d_max(max),
@@ -130,7 +130,7 @@ public:
     size_t nitems_min = in2 ? std::min(ninput_items[0], ninput_items[1]) : ninput_items[0];
     size_t nitems_max = in2 ? std::max(ninput_items[0], ninput_items[1]) : ninput_items[0];
     freq_type *out = reinterpret_cast<freq_type *>(output_items[0]);
-    freq_type *out2 = output_items.size() > 1 ? reinterpret_cast<freq_type *>(output_items[1]) : nullptr;
+    //freq_type *out2 = output_items.size() > 1 ? reinterpret_cast<freq_type *>(output_items[1]) : nullptr;
     bool warned = false;
 
     // grab the tags, and prepare iterators to walk them in parallel
@@ -145,18 +145,13 @@ public:
     }
 
     // size up histograms if needed; keeps output consistent
-    if (nitems_max > d_nitems) {
-      d_nitems = nitems_max;
-      for (hist_iterator it = d_histograms.begin(); it != d_histograms.end(); it ++) {
-        it->second.d_histograms.reserve(d_nitems * d_nbuckets);
-        it->second.d_histograms.resize(d_nitems * d_nbuckets, 0);
-        it->second.d_totals.reserve(d_nitems);
-        it->second.d_totals.resize(d_nitems, 0);
-      }
+    size_t nitems = nitems_min;
+    if (nullptr != d_histogram) {
+      nitems = d_histogram->d_totals.size();
     }
     
     // loop through each item of the histogram, each packet sample
-    for (int item = 0, sample = 0, hist_offset = 0; item < d_nitems; item ++, hist_offset += d_nbuckets)
+    for (int item = 0, sample = 0, hist_offset = 0; item < nitems; item ++, hist_offset += d_nbuckets)
     {
       // process the tags to match were we are in iterating the histogram
       for (size_t input = 0; input < input_items.size(); input ++) {
@@ -177,14 +172,20 @@ public:
         }
       }
 
-      // set histogram from property tags if changed
-      if (nullptr == d_histogram) {
-        d_histogram = &d_histograms[d_prop_tags];
-        if (0 == d_histogram->d_totals.size()) {
-          d_histogram->d_histograms.reserve(d_nitems * d_nbuckets);
-          d_histogram->d_histograms.resize(d_nitems * d_nbuckets, 0);
-          d_histogram->d_totals.reserve(d_nitems);
-          d_histogram->d_totals.resize(d_nitems, 0);
+      // set histogram if needed
+      if (nullptr == d_histogram || 0 == item) {
+        if (nullptr == d_histogram) {
+          d_histogram = &d_histograms[d_prop_tags];
+        }
+        if (d_histogram->d_totals.size() < nitems_min) {
+          d_histogram->d_histograms.reserve(nitems_min * d_nbuckets);
+          d_histogram->d_histograms.resize(nitems_min * d_nbuckets, 0);
+          d_histogram->d_totals.reserve(nitems_min);
+          d_histogram->d_totals.resize(nitems_min, 0);
+        }
+        nitems = d_histogram->d_totals.size();
+        if (nitems_max > d_nitems) {
+          d_nitems = nitems_max;
         }
       }
 
@@ -220,10 +221,10 @@ public:
       }
 
       // output the counter
-      if (out2) {
-        *out2 = d_histogram->d_totals[item];
-        out2 ++;
-      }
+      //if (out2) {
+      //  *out2 = d_histogram->d_totals[item];
+      //  out2 ++;
+      //}
     }
 
     return d_nitems;

@@ -24,6 +24,12 @@ class OPENEMISSIONS_API tagged_stream_histogram : virtual public gr::tagged_stre
   public:
   typedef std::shared_ptr<tagged_stream_histogram> sptr;
 
+    // I wanted to make this to send total counts parallel to histograms, but that has a different vector size.
+    // I think it mgiht be cleaner to have two output histogram ports for both blocks:
+    //   one to output relative frequencies,
+    //   the other to output bin counts.
+    // They would use different datatypes of the same size.
+
   /*!
    * \brief Return a shared_ptr to a new instance of
    *openemissions::histogram.
