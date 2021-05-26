@@ -17,7 +17,9 @@
 
 static size_t pmt_hash(pmt::pmt_t const &val)
 {
-  if (val->is_symbol() || val->is_null()) {
+  if (!val) {
+    return std::hash<pmt::pmt_t>{}(pmt::PMT_NIL);
+  } else if (val->is_symbol() || val->is_null()) {
     return std::hash<pmt::pmt_t>{}(val);
   } else if (val->is_bool()) {
     return std::hash<bool>{}(val == pmt::PMT_T);
@@ -162,7 +164,7 @@ public:
             // found a length tag
             size_t idx = len_it->second;
             size_t & max_len = d_tagged_stream_lengths[idx];
-            size_t len = pmt::to_long(tag.key);
+            size_t len = pmt::to_long(tag.value);
             if (len > max_len) {
               for (hist_iterator it = d_histograms.begin(); it != d_histograms.end(); it ++) {
                 typename histogram_t::tagged_stream_t & tagged_histogram = it->second.d_tagged_streams[idx];
