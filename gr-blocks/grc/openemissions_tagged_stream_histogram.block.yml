@@ -1,5 +1,5 @@
-id: openemissions_histogram
-label: histogram
+id: openemissions_tagged_stream_histogram
+label: Tagged Stream Histogram
 category: '[openemissions]'
 
 templates:
@@ -14,21 +14,21 @@ parameters:
     label: Input Type
     dtype: enum
     default: float
-    options: [f64, f32, s64, s64, s32, s16, s8, u8]
-    option_labels: ["Double", "Float", "Int64", "UInt64", "Int32", "Int16", "Int8", "UInt8"]
+    options: ["Double", "Float", "Int64", "UInt64", "Int32", "Int16", "Int8", "UInt8"]
     option_attributes:
         min_guess: [-2,-2,-0x7fffffffffffffff, 0x0000000000000000,-0x7fffffff,-0x7fff,-0x7f, 0x00]
         max_guess: [ 2, 2, 0x7fffffffffffffff, 0xffffffffffffffff, 0x7fffffff, 0x7fff, 0x7f, 0xff]
-        fnc: ["f64", "f32", "s64", "u64", "s32", "s16", "s8", "u8"]
+        fnc: ["f64", "f32", "u64", "s32", "s16", "s8", "u8"]
+        type: [f64, f32, s64, s64, s32, s16, s8, u8]
     hide: part
 -   id: output_type
     label: Output Type
     dtype: enum
     default: float
-    options: [s64, f32, f64]
-    option_labels: ["UInt64", "Float", "Double"]
+    options: ["UInt64", "Float", "Double"]
     option_attributes:
         fnc: ["u64", "f32", "f64"]
+        type: [s64, f32, f64]
     hide: part
 -   id: min
     label: Minimum
@@ -65,22 +65,22 @@ parameters:
 inputs:
 -   label: Input
     domain: stream
-    dtype: ${ input_type }
+    dtype: ${ input_type.type }
     vlen: ${ vinlen }
 -   label: Count Multiplier
     domain: stream
-    dtype: ${ input_type }
+    dtype: ${ input_type.type }
     vlen: ${ vinlen }
     optional: true
 
 outputs:
 -   label: Tagged Stream Histograms
     domain: stream
-    dtype: ${ output_type }
+    dtype: ${ output_type.type }
     vlen: ${ nbuckets }
 -   label: Totals
     domain: stream
-    dtype: ${ output_type }
+    dtype: ${ output_type.type }
     vlen: ${ nbuckets}
     optional: true
 
