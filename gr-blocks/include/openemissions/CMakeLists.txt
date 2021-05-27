@@ -16,5 +16,5 @@ install(FILES
     histogram.h
     tagged_stream_histogram.h
     accumulate.h
-    histogram_difference.h DESTINATION include/openemissions
+    histogram_binary_op.h DESTINATION include/openemissions
 )

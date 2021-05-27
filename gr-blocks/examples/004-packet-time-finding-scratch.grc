@@ -98,7 +98,7 @@ blocks:
     bus_structure: null
     coordinate: [480, 28.0]
     rotation: 0
-    state: true
+    state: enabled
 - name: analog_sig_source_x_0
   id: analog_sig_source_x
   parameters:
@@ -136,6 +136,23 @@ blocks:
     bus_structure: null
     coordinate: [328, 264.0]
     rotation: 0
+    state: disabled
+- name: blocks_null_sink_0
+  id: blocks_null_sink
+  parameters:
+    affinity: ''
+    alias: ''
+    bus_structure_sink: '[[0,],]'
+    comment: ''
+    num_inputs: '1'
+    type: complex
+    vlen: '1'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [608, 560.0]
+    rotation: 0
     state: true
 - name: blocks_stream_to_vector_0
   id: blocks_stream_to_vector
@@ -154,7 +171,7 @@ blocks:
     bus_structure: null
     coordinate: [1152, 120.0]
     rotation: 0
-    state: true
+    state: disabled
 - name: blocks_stream_to_vector_1
   id: blocks_stream_to_vector
   parameters:
@@ -172,7 +189,7 @@ blocks:
     bus_structure: null
     coordinate: [896, 136.0]
     rotation: 0
-    state: true
+    state: disabled
 - name: blocks_vector_to_stream_0
   id: blocks_vector_to_stream
   parameters:
@@ -190,7 +207,7 @@ blocks:
     bus_structure: null
     coordinate: [1176, 416.0]
     rotation: 0
-    state: true
+    state: disabled
 - name: fft_vxx_0
   id: fft_vxx
   parameters:
@@ -211,7 +228,7 @@ blocks:
     bus_structure: null
     coordinate: [1272, 244.0]
     rotation: 0
-    state: true
+    state: disabled
 - name: openemissions_pigpio_sink_0
   id: openemissions_pigpio_sink
   parameters:
@@ -254,9 +271,9 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [472, 348.0]
+    coordinate: [488, 388.0]
     rotation: 0
-    state: disabled
+    state: enabled
 - name: qtgui_auto_correlator_sink_1
   id: qtgui_auto_correlator_sink
   parameters:
@@ -279,7 +296,7 @@ blocks:
     bus_structure: null
     coordinate: [1376, 576.0]
     rotation: 0
-    state: true
+    state: disabled
 - name: qtgui_freq_sink_x_0
   id: qtgui_freq_sink_x
   parameters:
@@ -360,7 +377,7 @@ blocks:
     bus_structure: null
     coordinate: [1344, 468.0]
     rotation: 0
-    state: true
+    state: disabled
 - name: qtgui_histogram_sink_x_0
   id: qtgui_histogram_sink_x
   parameters:
@@ -447,7 +464,7 @@ blocks:
     bus_structure: null
     coordinate: [992, 560.0]
     rotation: 0
-    state: true
+    state: disabled
 - name: qtgui_time_raster_sink_x_0
   id: qtgui_time_raster_sink_x
   parameters:
@@ -510,7 +527,7 @@ blocks:
     bus_structure: null
     coordinate: [520, 172.0]
     rotation: 0
-    state: enabled
+    state: disabled
 - name: qtgui_vector_sink_f_0
   id: qtgui_vector_sink_f
   parameters:
@@ -583,7 +600,7 @@ blocks:
     bus_structure: null
     coordinate: [1088, 12.0]
     rotation: 0
-    state: true
+    state: disabled
 - name: rational_resampler_xxx_0
   id: rational_resampler_xxx
   parameters:
@@ -603,7 +620,7 @@ blocks:
     bus_structure: null
     coordinate: [736, 276.0]
     rotation: 0
-    state: true
+    state: disabled
 - name: rational_resampler_xxx_0_0
   id: rational_resampler_xxx
   parameters:
@@ -623,7 +640,7 @@ blocks:
     bus_structure: null
     coordinate: [920, 228.0]
     rotation: 0
-    state: true
+    state: disabled
 - name: rtlsdr_source_0
   id: rtlsdr_source
   parameters:
@@ -996,6 +1013,7 @@ connections:
 - [rational_resampler_xxx_0, '0', rational_resampler_xxx_0_0, '0']
 - [rational_resampler_xxx_0_0, '0', blocks_stream_to_vector_0, '0']
 - [rtlsdr_source_0, '0', blocks_complex_to_mag_squared_0, '0']
+- [rtlsdr_source_0, '0', blocks_null_sink_0, '0']
 - [rtlsdr_source_0, '0', qtgui_auto_correlator_sink_0, '0']
 
 metadata:

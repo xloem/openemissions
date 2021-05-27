@@ -13,41 +13,43 @@
 /* If manual edits are made, the following tags should be modified accordingly.    */
 /* BINDTOOL_GEN_AUTOMATIC(0)                                                       */
 /* BINDTOOL_USE_PYGCCXML(0)                                                        */
-/* BINDTOOL_HEADER_FILE(histogram_difference.h)                                    */
-/* BINDTOOL_HEADER_FILE_HASH(173200425cca7bc42f21f40999fca864)                     */
+/* BINDTOOL_HEADER_FILE(histogram_binary_op.h)                                     */
+/* BINDTOOL_HEADER_FILE_HASH(21d5e4e987252b4ae8c13bfc4b038cc8)                     */
 /***********************************************************************************/
 
 #include <pybind11/complex.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <pybind11/functional.h>
 
 namespace py = pybind11;
 
-#include <openemissions/histogram_difference.h>
+#include <openemissions/histogram_binary_op.h>
 // pydoc.h is automatically generated in the build directory
-#include <histogram_difference_pydoc.h>
+#include <histogram_binary_op_pydoc.h>
 
 template <typename freq_type>
-void bind_histogram_difference_template(py::module& m, const char* classname)
+void bind_histogram_binary_op_template(py::module& m, const char* classname)
 {
 
-    using histogram_difference    = gr::openemissions::histogram_difference<freq_type>;
+    using histogram_binary_op    = gr::openemissions::histogram_binary_op<freq_type>;
 
 
-    py::class_<histogram_difference, gr::sync_block, gr::block, gr::basic_block,
-        std::shared_ptr<histogram_difference>>(m, classname)
+    py::class_<histogram_binary_op, gr::sync_block, gr::block, gr::basic_block,
+        std::shared_ptr<histogram_binary_op>>(m, classname)
 
-        .def(py::init(&histogram_difference::make),
+        .def(py::init(&histogram_binary_op::make),
            py::arg("min"),
            py::arg("max"),
+           py::arg("op"),
            py::arg("nbuckets") = 1024,
-           D(histogram_difference,make)
+           D(histogram_binary_op,make)
         ) ;
 }
 
-void bind_histogram_difference(py::module& m)
+void bind_histogram_binary_op(py::module& m)
 {
-    bind_histogram_difference_template<double>(m, "histogram_f64");
-    bind_histogram_difference_template<float>(m, "histogram_f32");
-    bind_histogram_difference_template<uint64_t>(m, "histogram_u64");
+    bind_histogram_binary_op_template<double>(m, "histogram_binary_op_f64");
+    bind_histogram_binary_op_template<float>(m, "histogram_binary_op_f32");
+    bind_histogram_binary_op_template<uint64_t>(m, "histogram_binary_op_u64");
 }

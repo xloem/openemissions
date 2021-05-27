@@ -16,12 +16,12 @@
 
 
  
- static const char *__doc_gr_openemissions_histogram_difference = R"doc()doc";
+ static const char *__doc_gr_openemissions_histogram_binary_op = R"doc()doc";
 
 
- static const char *__doc_gr_openemissions_histogram_difference_histogram_desummation = R"doc()doc";
+ static const char *__doc_gr_openemissions_histogram_binary_op_histogram_desummation = R"doc()doc";
 
 
- static const char *__doc_gr_openemissions_histogram_difference_make = R"doc()doc";
+ static const char *__doc_gr_openemissions_histogram_binary_op_make = R"doc()doc";
 
   

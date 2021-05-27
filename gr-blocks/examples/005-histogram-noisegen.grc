@@ -1,0 +1,550 @@
+options:
+  parameters:
+    author: ''
+    catch_exceptions: 'True'
+    category: '[GRC Hier Blocks]'
+    cmake_opt: ''
+    comment: ''
+    copyright: ''
+    description: ''
+    gen_cmake: 'On'
+    gen_linking: dynamic
+    generate_options: qt_gui
+    hier_block_src_path: '.:'
+    id: histogram_noisegen
+    max_nouts: '0'
+    output_language: python
+    placement: (0,0)
+    qt_qss_theme: ''
+    realtime_scheduling: ''
+    run: 'True'
+    run_command: '{python} -u {filename}'
+    run_options: prompt
+    sizing_mode: fixed
+    thread_safe_setters: ''
+    title: Not titled yet
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [8, 8]
+    rotation: 0
+    state: enabled
+
+blocks:
+- name: ampl_bg
+  id: variable
+  parameters:
+    comment: ''
+    value: '0.75'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [368, 20.0]
+    rotation: 0
+    state: true
+- name: ampl_fg
+  id: variable
+  parameters:
+    comment: ''
+    value: '0.5'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [368, 92.0]
+    rotation: 0
+    state: true
+- name: nbuckets
+  id: variable
+  parameters:
+    comment: ''
+    value: '256'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [176, 84.0]
+    rotation: 0
+    state: true
+- name: samp_rate
+  id: variable
+  parameters:
+    comment: ''
+    value: '32000'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [184, 12]
+    rotation: 0
+    state: enabled
+- name: vmax
+  id: variable
+  parameters:
+    comment: ''
+    value: (ampl_fg**2 + ampl_bg**2)**.5*8
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [528, 92.0]
+    rotation: 0
+    state: true
+- name: vmin
+  id: variable
+  parameters:
+    comment: ''
+    value: -vmax
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [528, 20.0]
+    rotation: 0
+    state: true
+- name: analog_noise_source_x_0
+  id: analog_noise_source_x
+  parameters:
+    affinity: ''
+    alias: ''
+    amp: ampl_bg
+    comment: ''
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    noise_type: analog.GR_LAPLACIAN
+    seed: '0'
+    type: float
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [64, 372.0]
+    rotation: 0
+    state: true
+- name: analog_noise_source_x_1
+  id: analog_noise_source_x
+  parameters:
+    affinity: ''
+    alias: ''
+    amp: ampl_fg
+    comment: ''
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    noise_type: analog.GR_UNIFORM
+    seed: '1'
+    type: float
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [64, 452.0]
+    rotation: 0
+    state: true
+- name: analog_noise_source_x_2
+  id: analog_noise_source_x
+  parameters:
+    affinity: ''
+    alias: ''
+    amp: ampl_bg
+    comment: ''
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    noise_type: analog.GR_LAPLACIAN
+    seed: '3'
+    type: float
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [144, 180.0]
+    rotation: 0
+    state: true
+- name: analog_noise_source_x_3
+  id: analog_noise_source_x
+  parameters:
+    affinity: ''
+    alias: ''
+    amp: ampl_fg
+    comment: ''
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    noise_type: analog.GR_UNIFORM
+    seed: '2'
+    type: float
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [136, 276.0]
+    rotation: 0
+    state: true
+- name: blocks_add_xx_0
+  id: blocks_add_xx
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: ''
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    num_inputs: '2'
+    type: float
+    vlen: '1'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [288, 416.0]
+    rotation: 0
+    state: true
+- name: blocks_complex_to_mag_squared_0
+  id: blocks_complex_to_mag_squared
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: ''
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    vlen: '1'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [376, 440.0]
+    rotation: 0
+    state: disabled
+- name: blocks_complex_to_mag_squared_1
+  id: blocks_complex_to_mag_squared
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: ''
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    vlen: '1'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [344, 216.0]
+    rotation: 0
+    state: disabled
+- name: blocks_complex_to_mag_squared_2
+  id: blocks_complex_to_mag_squared
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: ''
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    vlen: '1'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [352, 304.0]
+    rotation: 0
+    state: disabled
+- name: blocks_null_sink_0
+  id: blocks_null_sink
+  parameters:
+    affinity: ''
+    alias: ''
+    bus_structure_sink: '[[0,],]'
+    comment: ''
+    num_inputs: '1'
+    type: float
+    vlen: nbuckets
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [1448, 544.0]
+    rotation: 0
+    state: disabled
+- name: blocks_sub_xx_0
+  id: blocks_sub_xx
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: ''
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    num_inputs: '2'
+    type: float
+    vlen: '1'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [736, 336.0]
+    rotation: 0
+    state: true
+- name: blocks_throttle_0
+  id: blocks_throttle
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: ''
+    ignoretag: 'True'
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    samples_per_second: samp_rate
+    type: float
+    vlen: '1'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [592, 196.0]
+    rotation: 0
+    state: true
+- name: blocks_throttle_1
+  id: blocks_throttle
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: ''
+    ignoretag: 'True'
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    samples_per_second: samp_rate
+    type: float
+    vlen: '1'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [552, 436.0]
+    rotation: 0
+    state: true
+- name: blocks_throttle_2
+  id: blocks_throttle
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: ''
+    ignoretag: 'True'
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    samples_per_second: samp_rate
+    type: float
+    vlen: '1'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [584, 292.0]
+    rotation: 0
+    state: true
+- name: openemissions_histogram_0
+  id: openemissions_histogram
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: ''
+    input_type: Float
+    max: vmax
+    maxoutbuf: '0'
+    min: vmin
+    minoutbuf: '0'
+    nbuckets: nbuckets
+    output_type: Float
+    prop_tag_keys: ''
+    vinlen: '1'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [768, 412.0]
+    rotation: 0
+    state: true
+- name: openemissions_histogram_1
+  id: openemissions_histogram
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: ''
+    input_type: Float
+    max: vmax
+    maxoutbuf: '0'
+    min: vmin
+    minoutbuf: '0'
+    nbuckets: nbuckets
+    output_type: Float
+    prop_tag_keys: ''
+    vinlen: '1'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [1016, 132.0]
+    rotation: 0
+    state: true
+- name: openemissions_histogram_2
+  id: openemissions_histogram
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: ''
+    input_type: Float
+    max: vmax
+    maxoutbuf: '0'
+    min: vmin
+    minoutbuf: '0'
+    nbuckets: nbuckets
+    output_type: Float
+    prop_tag_keys: ''
+    vinlen: '1'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [776, 260.0]
+    rotation: 0
+    state: true
+- name: openemissions_histogram_3
+  id: openemissions_histogram
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: ''
+    input_type: Float
+    max: vmax
+    maxoutbuf: '0'
+    min: vmin
+    minoutbuf: '0'
+    nbuckets: nbuckets
+    output_type: Float
+    prop_tag_keys: ''
+    vinlen: '1'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [936, 324.0]
+    rotation: 0
+    state: true
+- name: openemissions_histogram_binary_op_0
+  id: openemissions_histogram_binary_op
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: ''
+    freq_type: Float
+    max: vmax
+    maxoutbuf: '0'
+    min: vmin
+    minoutbuf: '0'
+    nbuckets: nbuckets
+    op: x - y
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [1040, 436.0]
+    rotation: 0
+    state: true
+- name: qtgui_vector_sink_f_0
+  id: qtgui_vector_sink_f
+  parameters:
+    affinity: ''
+    alias: ''
+    alpha1: '1.0'
+    alpha10: '1.0'
+    alpha2: '1.0'
+    alpha3: '1.0'
+    alpha4: '1.0'
+    alpha5: '1.0'
+    alpha6: '1.0'
+    alpha7: '1.0'
+    alpha8: '1.0'
+    alpha9: '1.0'
+    autoscale: 'True'
+    average: '1.0'
+    color1: '"blue"'
+    color10: '"dark blue"'
+    color2: '"red"'
+    color3: '"dark blue"'
+    color4: '"black"'
+    color5: '"cyan"'
+    color6: '"magenta"'
+    color7: '"yellow"'
+    color8: '"dark red"'
+    color9: '"dark green"'
+    comment: ''
+    grid: 'True'
+    gui_hint: ''
+    label1: BG Noise
+    label10: ''
+    label2: FG Noise
+    label3: Summed Noise
+    label4: Prehist Summed - BG
+    label5: Posthist Summed - BG
+    label6: ''
+    label7: ''
+    label8: ''
+    label9: ''
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    name: '""'
+    nconnections: '5'
+    ref_level: '0'
+    showports: 'False'
+    update_time: '0.10'
+    vlen: nbuckets
+    width1: '1'
+    width10: '1'
+    width2: '1'
+    width3: '1'
+    width4: '1'
+    width5: '1'
+    width6: '1'
+    width7: '1'
+    width8: '1'
+    width9: '1'
+    x_axis_label: Signal
+    x_start: vmin
+    x_step: (vmax - vmin) / nbuckets
+    x_units: '""'
+    y_axis_label: Frequency
+    y_units: '""'
+    ymax: '0.01'
+    ymin: '0'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [1320, 280.0]
+    rotation: 0
+    state: true
+
+connections:
+- [analog_noise_source_x_0, '0', blocks_add_xx_0, '0']
+- [analog_noise_source_x_1, '0', blocks_add_xx_0, '1']
+- [analog_noise_source_x_2, '0', blocks_complex_to_mag_squared_1, '0']
+- [analog_noise_source_x_2, '0', blocks_throttle_0, '0']
+- [analog_noise_source_x_3, '0', blocks_complex_to_mag_squared_2, '0']
+- [analog_noise_source_x_3, '0', blocks_throttle_2, '0']
+- [blocks_add_xx_0, '0', blocks_complex_to_mag_squared_0, '0']
+- [blocks_add_xx_0, '0', blocks_throttle_1, '0']
+- [blocks_complex_to_mag_squared_0, '0', blocks_throttle_1, '0']
+- [blocks_complex_to_mag_squared_1, '0', blocks_throttle_0, '0']
+- [blocks_complex_to_mag_squared_2, '0', blocks_throttle_2, '0']
+- [blocks_sub_xx_0, '0', openemissions_histogram_3, '0']
+- [blocks_throttle_0, '0', blocks_sub_xx_0, '1']
+- [blocks_throttle_0, '0', openemissions_histogram_1, '0']
+- [blocks_throttle_1, '0', blocks_sub_xx_0, '0']
+- [blocks_throttle_1, '0', openemissions_histogram_0, '0']
+- [blocks_throttle_2, '0', openemissions_histogram_2, '0']
+- [openemissions_histogram_0, '0', openemissions_histogram_binary_op_0, '0']
+- [openemissions_histogram_0, '0', qtgui_vector_sink_f_0, '2']
+- [openemissions_histogram_1, '0', openemissions_histogram_binary_op_0, '1']
+- [openemissions_histogram_1, '0', qtgui_vector_sink_f_0, '0']
+- [openemissions_histogram_2, '0', qtgui_vector_sink_f_0, '1']
+- [openemissions_histogram_3, '0', qtgui_vector_sink_f_0, '3']
+- [openemissions_histogram_binary_op_0, '0', qtgui_vector_sink_f_0, '4']
+
+metadata:
+  file_format: 1

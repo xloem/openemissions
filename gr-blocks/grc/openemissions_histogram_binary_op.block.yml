@@ -1,10 +1,11 @@
-id: openemissions_histogram_difference
-label: Histogram Difference
+id: openemissions_histogram_binary_op
+label: Histogram Binary Operation
 category: '[openemissions]'
 
 templates:
-  imports: import openemissions
-  make: openemissions.histogram_difference_${freq_type.fnc}(${min}, ${max}, ${nbuckets})
+    imports: import openemissions
+    make: |-
+        openemissions.histogram_binary_op_${freq_type.fnc}(${min}, ${max}, lambda x, y: eval(${op}, locals(), globals()), ${nbuckets})
 
 parameters:
 -   id: freq_type
@@ -22,23 +23,27 @@ parameters:
 -   id: max
     label: Maximum
     dtype: real
+-   id: op
+    label: Operation
+    dtype: string
+    default: "x + y"
 -   id: nbuckets
     label: Histogram Vec Length
     dtype: int
     default: 1024
 
 inputs:
--   label: Sum
+-   label: X Histogram
     domain: stream
     dtype: ${ freq_type.type }
     vlen: ${ nbuckets }
--   label: Subtrahend
+-   label: Y Histogram
     domain: stream
     dtype: ${ freq_type.type }
     vlen: ${ nbuckets }
 
 outputs:
--   label: Difference
+-   label: Result Histogram
     domain: stream
     dtype: ${ freq_type. type }
     vlen: ${ nbuckets }

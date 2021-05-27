@@ -225,7 +225,7 @@ blocks:
     samples_per_second: samp_rate
     type: byte
     vlen: '1'
-    wave_buffer_percent: '25'
+    wave_buffer_percent: '20'
   states:
     bus_sink: false
     bus_source: false
