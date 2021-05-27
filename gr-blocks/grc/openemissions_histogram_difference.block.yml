@@ -1,0 +1,46 @@
+id: openemissions_histogram_difference
+label: Histogram Difference
+category: '[openemissions]'
+
+templates:
+  imports: import openemissions
+  make: openemissions.histogram_difference_${freq_type.fnc}(${min}, ${max}, ${nbuckets})
+
+parameters:
+-   id: freq_type
+    label: Type
+    dtype: enum
+    default: float
+    options: ["UInt64", "Float", "Double"]
+    option_attributes:
+        fnc: ["u64", "f32", "f64"]
+        type: [s64, f32, f64]
+    hide: part
+-   id: min
+    label: Minimum
+    dtype: real
+-   id: max
+    label: Maximum
+    dtype: real
+-   id: nbuckets
+    label: Histogram Vec Length
+    dtype: int
+    default: 1024
+
+inputs:
+-   label: Sum
+    domain: stream
+    dtype: ${ freq_type.type }
+    vlen: ${ nbuckets }
+-   label: Subtrahend
+    domain: stream
+    dtype: ${ freq_type.type }
+    vlen: ${ nbuckets }
+
+outputs:
+-   label: Difference
+    domain: stream
+    dtype: ${ freq_type. type }
+    vlen: ${ nbuckets }
+
+file_format: 1

@@ -90,6 +90,8 @@ private:
   std::vector<std::vector<gr::tag_t>::iterator> d_work_tag_its;
   std::vector<int64_t> d_work_input_offsets;
 
+  bool d_warned;
+
 public:
   /*
    * The private constructor
@@ -119,6 +121,12 @@ public:
   ~tagged_stream_histogram_impl()
   { }
 
+  bool start() override
+  {
+    d_warned = false;
+    return tagged_stream_block::start();
+  }
+
   // Where all the action really happens
   int work(int noutput_items,
            gr_vector_int& ninput_items,
@@ -131,7 +139,6 @@ public:
     size_t nitems_max = in2 ? std::max(ninput_items[0], ninput_items[1]) : ninput_items[0];
     freq_type *out = reinterpret_cast<freq_type *>(output_items[0]);
     //freq_type *out2 = output_items.size() > 1 ? reinterpret_cast<freq_type *>(output_items[1]) : nullptr;
-    bool warned = false;
 
     // grab the tags, and prepare iterators to walk them in parallel
     d_work_tags.resize(input_items.size());
@@ -198,9 +205,10 @@ public:
             size_t bucket = value * d_value_to_bucket_coeff + d_value_to_bucket_offset;
             d_histogram->d_histograms[hist_offset + bucket] += count;
             d_histogram->d_totals[item] += count;
-          } else if (!warned) {
+          } else if (!d_warned) {
             GR_LOG_WARN(this->d_logger, "value " + std::to_string(value) + " outside histogram range [" + std::to_string(d_min) + ", " + std::to_string(d_max) + ")");
-            warned = true;
+            GR_LOG_WARN(this->d_logger, "Further range warnings from this block suppressed.");
+            d_warned = true;
           }
         }
       }
@@ -269,7 +277,7 @@ protected:
 private:
   inline void update_coeff()
   {
-    input_type range = d_max - d_min;
+    double range = (double)d_max - d_min;
     d_value_to_bucket_coeff = d_nbuckets / range;
     d_value_to_bucket_offset = d_nbuckets * -d_min / range;
   }

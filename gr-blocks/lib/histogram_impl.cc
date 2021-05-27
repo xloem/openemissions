@@ -86,6 +86,8 @@ private:
   double d_value_to_bucket_offset;
   std::vector<gr::tag_t> d_work_tags;
 
+  bool d_warned;
+
 public:
   /*
    * The private constructor
@@ -113,10 +115,16 @@ public:
   ~histogram_impl()
   { }
 
+  bool start() override
+  {
+    d_warned = false;
+    return sync_block::start();
+  }
+
   // Where all the action really happens
   int work(int noutput_items,
-      gr_vector_const_void_star &input_items,
-      gr_vector_void_star &output_items)
+           gr_vector_const_void_star &input_items,
+           gr_vector_void_star &output_items)
   {
     const input_type *in = reinterpret_cast<const input_type *>(input_items[0]);
     freq_type *out = reinterpret_cast<freq_type *>(output_items[0]);
@@ -124,7 +132,6 @@ public:
       reinterpret_cast<freq_type **>(output_items.data() + 1),
       reinterpret_cast<freq_type **>(output_items.data() + output_items.size())
     );
-    bool warned = false;
 
     this->get_tags_in_window(d_work_tags, 0, 0, noutput_items);
     std::vector<gr::tag_t>::iterator tag_it = d_work_tags.begin();
@@ -161,9 +168,10 @@ public:
           size_t bucket = value * d_value_to_bucket_coeff + d_value_to_bucket_offset;
           d_histogram->d_overall[bucket] ++;
           d_histogram->d_total ++;
-        } else if (!warned) {
+        } else if (!d_warned) {
           GR_LOG_WARN(this->d_logger, "value " + std::to_string(value) + " outside histogram range [" + std::to_string(d_min) + ", " + std::to_string(d_max) + ")");
-          warned = true;
+          GR_LOG_WARN(this->d_logger, "Further range warnings from this block suppressed.");
+          d_warned = true;
         }
       }
       
@@ -220,7 +228,7 @@ public:
 private:
   inline void update_coeff()
   {
-    input_type range = d_max - d_min;
+    double range = (double)d_max - d_min;
     d_value_to_bucket_coeff = d_nbuckets / range;
     d_value_to_bucket_offset = d_nbuckets * -d_min / range;
   }

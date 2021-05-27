@@ -34,6 +34,7 @@ list(APPEND openemissions_python_files
     pigpio_sink_python.cc
     histogram_python.cc
     tagged_stream_histogram_python.cc
+    histogram_difference_python.cc
     python_bindings.cc
 )
 

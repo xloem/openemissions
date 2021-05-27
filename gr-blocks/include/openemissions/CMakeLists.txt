@@ -15,5 +15,6 @@ install(FILES
     pigpio_sink.h
     histogram.h
     tagged_stream_histogram.h
-    accumulate.h DESTINATION include/openemissions
+    accumulate.h
+    histogram_difference.h DESTINATION include/openemissions
 )
