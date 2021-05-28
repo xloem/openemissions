@@ -84,7 +84,7 @@ blocks:
   id: variable
   parameters:
     comment: ''
-    value: (ampl_fg**2 + ampl_bg**2)**.5*8
+    value: (ampl_fg**2 + ampl_bg**2)*2
   states:
     bus_sink: false
     bus_source: false
@@ -113,9 +113,9 @@ blocks:
     comment: ''
     maxoutbuf: '0'
     minoutbuf: '0'
-    noise_type: analog.GR_LAPLACIAN
+    noise_type: analog.GR_GAUSSIAN
     seed: '0'
-    type: float
+    type: complex
   states:
     bus_sink: false
     bus_source: false
@@ -134,7 +134,7 @@ blocks:
     minoutbuf: '0'
     noise_type: analog.GR_UNIFORM
     seed: '1'
-    type: float
+    type: complex
   states:
     bus_sink: false
     bus_source: false
@@ -151,9 +151,9 @@ blocks:
     comment: ''
     maxoutbuf: '0'
     minoutbuf: '0'
-    noise_type: analog.GR_LAPLACIAN
+    noise_type: analog.GR_GAUSSIAN
     seed: '3'
-    type: float
+    type: complex
   states:
     bus_sink: false
     bus_source: false
@@ -172,7 +172,7 @@ blocks:
     minoutbuf: '0'
     noise_type: analog.GR_UNIFORM
     seed: '2'
-    type: float
+    type: complex
   states:
     bus_sink: false
     bus_source: false
@@ -189,7 +189,7 @@ blocks:
     maxoutbuf: '0'
     minoutbuf: '0'
     num_inputs: '2'
-    type: float
+    type: complex
     vlen: '1'
   states:
     bus_sink: false
@@ -213,7 +213,7 @@ blocks:
     bus_structure: null
     coordinate: [376, 440.0]
     rotation: 0
-    state: disabled
+    state: enabled
 - name: blocks_complex_to_mag_squared_1
   id: blocks_complex_to_mag_squared
   parameters:
@@ -229,7 +229,7 @@ blocks:
     bus_structure: null
     coordinate: [344, 216.0]
     rotation: 0
-    state: disabled
+    state: enabled
 - name: blocks_complex_to_mag_squared_2
   id: blocks_complex_to_mag_squared
   parameters:
@@ -245,24 +245,7 @@ blocks:
     bus_structure: null
     coordinate: [352, 304.0]
     rotation: 0
-    state: disabled
-- name: blocks_null_sink_0
-  id: blocks_null_sink
-  parameters:
-    affinity: ''
-    alias: ''
-    bus_structure_sink: '[[0,],]'
-    comment: ''
-    num_inputs: '1'
-    type: float
-    vlen: nbuckets
-  states:
-    bus_sink: false
-    bus_source: false
-    bus_structure: null
-    coordinate: [1448, 544.0]
-    rotation: 0
-    state: disabled
+    state: enabled
 - name: blocks_sub_xx_0
   id: blocks_sub_xx
   parameters:
@@ -426,24 +409,26 @@ blocks:
     coordinate: [936, 324.0]
     rotation: 0
     state: true
-- name: openemissions_histogram_binary_op_0
-  id: openemissions_histogram_binary_op
+- name: openemissions_histogram_solve_0
+  id: openemissions_histogram_solve
   parameters:
     affinity: ''
     alias: ''
     comment: ''
+    expr: x1 - x2
     freq_type: Float
     max: vmax
     maxoutbuf: '0'
     min: vmin
     minoutbuf: '0'
     nbuckets: nbuckets
-    op: x - y
+    nvars: '2'
+    output_idx: '0'
   states:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [1040, 436.0]
+    coordinate: [1048, 428.0]
     rotation: 0
     state: true
 - name: qtgui_vector_sink_f_0
@@ -524,11 +509,8 @@ connections:
 - [analog_noise_source_x_0, '0', blocks_add_xx_0, '0']
 - [analog_noise_source_x_1, '0', blocks_add_xx_0, '1']
 - [analog_noise_source_x_2, '0', blocks_complex_to_mag_squared_1, '0']
-- [analog_noise_source_x_2, '0', blocks_throttle_0, '0']
 - [analog_noise_source_x_3, '0', blocks_complex_to_mag_squared_2, '0']
-- [analog_noise_source_x_3, '0', blocks_throttle_2, '0']
 - [blocks_add_xx_0, '0', blocks_complex_to_mag_squared_0, '0']
-- [blocks_add_xx_0, '0', blocks_throttle_1, '0']
 - [blocks_complex_to_mag_squared_0, '0', blocks_throttle_1, '0']
 - [blocks_complex_to_mag_squared_1, '0', blocks_throttle_0, '0']
 - [blocks_complex_to_mag_squared_2, '0', blocks_throttle_2, '0']
@@ -538,13 +520,13 @@ connections:
 - [blocks_throttle_1, '0', blocks_sub_xx_0, '0']
 - [blocks_throttle_1, '0', openemissions_histogram_0, '0']
 - [blocks_throttle_2, '0', openemissions_histogram_2, '0']
-- [openemissions_histogram_0, '0', openemissions_histogram_binary_op_0, '0']
+- [openemissions_histogram_0, '0', openemissions_histogram_solve_0, '0']
 - [openemissions_histogram_0, '0', qtgui_vector_sink_f_0, '2']
-- [openemissions_histogram_1, '0', openemissions_histogram_binary_op_0, '1']
+- [openemissions_histogram_1, '0', openemissions_histogram_solve_0, '1']
 - [openemissions_histogram_1, '0', qtgui_vector_sink_f_0, '0']
 - [openemissions_histogram_2, '0', qtgui_vector_sink_f_0, '1']
 - [openemissions_histogram_3, '0', qtgui_vector_sink_f_0, '3']
-- [openemissions_histogram_binary_op_0, '0', qtgui_vector_sink_f_0, '4']
+- [openemissions_histogram_solve_0, '0', qtgui_vector_sink_f_0, '4']
 
 metadata:
   file_format: 1

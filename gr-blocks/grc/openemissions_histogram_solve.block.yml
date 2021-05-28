@@ -1,0 +1,69 @@
+id: openemissions_histogram_solve
+label: Histogram Equation Solver
+category: '[openemissions]'
+
+templates:
+    imports: import openemissions
+    make: |-
+        openemissions.histogram_solve_${freq_type.fnc}_${nvars}(
+            ${min},
+            ${max},
+            lambda x1=0,x2=0,x3=0: eval(${expr}, locals(), globals()),
+            ${output_idx},
+            ${nbuckets}
+        )
+
+#            ${output_idx - 1 if output_idx > 0 else nvars},
+
+parameters:
+-   id: freq_type
+    label: Type
+    dtype: enum
+    default: "Float"
+    options: ["UInt64", "Float", "Double"]
+    option_attributes:
+        fnc: ["u64", "f32", "f64"]
+        type: [s64, f32, f64]
+    hide: part
+-   id: min
+    label: Minimum
+    dtype: real
+-   id: max
+    label: Maximum
+    dtype: real
+-   id: expr
+    label: y(x1,x2?,x3?) =
+    dtype: string
+    default: "x1 + x2"
+-   id: nvars
+    label: Knowns
+    dtype: int
+    default: 2
+-   id: output_idx
+    label: Unknown
+    dtype: enum
+    default: 0
+    options: [0, 1, 2, 3]
+    option_labels: ["y", "x1", "x2", "x3"]
+-   id: nbuckets
+    label: Histogram Vec Length
+    dtype: int
+    default: 1024
+
+inputs:
+-   label: Known
+    domain: stream
+    dtype: ${ freq_type.type }
+    vlen: ${ nbuckets }
+    multiplicity: ${nvars}
+
+outputs:
+-   label: Unknown
+    domain: stream
+    dtype: ${ freq_type.type }
+    vlen: ${ nbuckets }
+
+asserts:
+-   ${ nvars >= 0 and nvars <= 3 }
+
+file_format: 1

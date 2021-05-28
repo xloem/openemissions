@@ -26,7 +26,7 @@ namespace py = pybind11;
     void bind_histogram(py::module& m);
     void bind_tagged_stream_histogram(py::module& m);
     void bind_accumulate(py::module& m);
-    void bind_histogram_binary_op(py::module& m);
+    void bind_histogram_solve(py::module& m);
 // ) END BINDING_FUNCTION_PROTOTYPES
 
 
@@ -60,6 +60,6 @@ PYBIND11_MODULE(openemissions_python, m)
     bind_histogram(m);
     bind_tagged_stream_histogram(m);
     bind_accumulate(m);
-    bind_histogram_binary_op(m);
+    bind_histogram_solve(m);
     // ) END BINDING_FUNCTION_CALLS
 }

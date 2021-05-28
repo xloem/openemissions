@@ -23,7 +23,7 @@ list(APPEND openemissions_sources
     histogram_impl.cc
     tagged_stream_histogram_impl.cc
     accumulate_impl.cc
-    histogram_binary_op_impl.cc
+    histogram_solve_impl.cc
 )
 
 set(openemissions_sources "${openemissions_sources}" PARENT_SCOPE)

@@ -18,7 +18,7 @@ except ImportError:
     sys.path.append(os.path.join(dirname, "bindings"))
     from openemissions import *
 
-class qa_histogram_binary_op(gr_unittest.TestCase):
+class qa_histogram_solve(gr_unittest.TestCase):
 
     def setUp(self):
         self.tb = gr.top_block()
@@ -26,12 +26,18 @@ class qa_histogram_binary_op(gr_unittest.TestCase):
     def tearDown(self):
         self.tb = None
 
-    def test_instance(self):
-        mul_f32 = histogram_binary_op_f32(0, 2, lambda x, y: x * y)
-        mul_f64 = histogram_binary_op_f64(0, 2, lambda x, y: x * y)
-        mul_u64 = histogram_binary_op_u64(0, 2, lambda x, y: x * y)
+    #def test_instance(self):
+    #    f64_1 = histogram_solve_f64_1(-1, 1, lambda a: a, nbuckets=4)
+    #    f32_1 = histogram_solve_f32_1(-1, 1, lambda a: a, nbuckets=4)
+    #    u64_1 = histogram_solve_u64_1(-1, 1, lambda a: a, nbuckets=4)
+    #    f64_2 = histogram_solve_f64_2(-1, 1, lambda a, b: a, nbuckets=4)
+    #    f32_2 = histogram_solve_f32_2(-1, 1, lambda a, b: a, nbuckets=4)
+    #    u64_2 = histogram_solve_u64_2(-1, 1, lambda a, b: a, nbuckets=4)
+    #    f64_3 = histogram_solve_f64_3(-1, 1, lambda a, b, c: a, nbuckets=4)
+    #    f32_3 = histogram_solve_f32_3(-1, 1, lambda a, b, c: a, nbuckets=4)
+    #    u64_3 = histogram_solve_u64_3(-1, 1, lambda a, b, c: a, nbuckets=4)
 
-    def test_mul_f64(self):
+    def test_mul_f32(self):
         src1_f32 = blocks.vector_source_f(
             data = [
                 #-3   -2   -1     0    1     2     3     4
@@ -46,7 +52,7 @@ class qa_histogram_binary_op(gr_unittest.TestCase):
             ],
             vlen = 8
         )
-        mul_f32 = histogram_binary_op_f32(-3.5, 4.5, lambda x, y: x * y, nbuckets=8)
+        mul_f32 = histogram_solve_f32_2(-3.5, 4.5, lambda x, y: x * y, nbuckets=8)
         sink_f32 = blocks.vector_sink_f(8)
 
         self.tb.connect(src1_f32, mul_f32, sink_f32)
@@ -93,5 +99,6 @@ class qa_histogram_binary_op(gr_unittest.TestCase):
             0.00,
         ], sink_f32.data(), 7)
 
+
 if __name__ == '__main__':
-    gr_unittest.run(qa_histogram_binary_op)
+    gr_unittest.run(qa_histogram_solve)

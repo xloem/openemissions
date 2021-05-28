@@ -12,5 +12,5 @@ install(FILES
     openemissions_histogram.block.yml
     openemissions_tagged_stream_histogram.block.yml
     openemissions_accumulate.block.yml
-    openemissions_histogram_binary_op.block.yml DESTINATION share/gnuradio/grc/blocks
+    openemissions_histogram_solve.block.yml DESTINATION share/gnuradio/grc/blocks
 )

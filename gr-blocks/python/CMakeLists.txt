@@ -36,4 +36,4 @@ GR_ADD_TEST(qa_pigpio_sink ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/qa_p
 GR_ADD_TEST(qa_histogram ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/qa_histogram.py)
 GR_ADD_TEST(qa_tagged_stream_histogram ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/qa_tagged_stream_histogram.py)
 GR_ADD_TEST(qa_accumulate ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/qa_accumulate.py)
-GR_ADD_TEST(qa_histogram_binary_op ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/qa_histogram_binary_op.py)
+GR_ADD_TEST(qa_histogram_solve ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/qa_histogram_solve.py)
