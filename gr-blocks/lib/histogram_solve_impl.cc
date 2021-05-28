@@ -105,7 +105,7 @@ public:
     freq_type *out = reinterpret_cast<freq_type*>(output_items[0]);
     //memset(out, 0, sizeof(freq_type) * noutput_items);
 
-    std::vector<double> hist_cache(noutput_items);
+    std::vector<double> hist_cache(d_nbuckets);
 
     for (size_t item = 0; item < noutput_items; item ++) {
 
@@ -124,8 +124,12 @@ public:
           measured_result_total += in[result_input_idx()][result_bucket];
         }
 
+        // we form distributions for each potential value of the unknown variable
         for (size_t unknown_bucket = 0; unknown_bucket < d_nbuckets; unknown_bucket ++) {
-          freq_type & unknown_proportion = out[unknown_bucket];
+          double unknown_proportion;
+
+          // given the potential value, we form the histogram of the result variable
+          // this histogram is placed into hist_cache
 
           double calculated_result_total = 0;
           for (size_t result_bucket = 0; result_bucket < d_nbuckets; result_bucket ++) {
@@ -135,35 +139,63 @@ public:
           }
 
           unknown_proportion = calculated_result_total;
-          for (size_t result_bucket = 0; result_bucket < d_nbuckets; result_bucket ++) {
-            // calculate potential result bucket and compare with reality
 
+          // in the qa_test, for output bucket 0 == output value -3,
+          // the result total is zero because there is no density in the overlapping region
+          // adding -3 to the addend makes it completely nonintersecting with the sum.
+          // it only intersects when the scalar addend is >= 0
+
+          // this might relate to meaning of calculated_result_total that is left out of the algorithm.
+          // areas that overlap are much more valuable than those that don't.
+
+          for (size_t result_bucket = 0; unknown_proportion != 0 && result_bucket < d_nbuckets; result_bucket ++) {
+            // calculate potential result bucket and compare with reality
+    
             double calculated_result_frequency = hist_cache[result_bucket];
             freq_type const & measured_result_frequency = in[result_input_idx()][result_bucket];
-
+    
             double population_frequency = calculated_result_frequency;
             double population_count = calculated_result_total;
             double sample_frequency = measured_result_frequency;
             double sample_count = measured_result_total;
-
-            double population_proportion = population_frequency / population_count;
-            double sample_proportion = sample_frequency / sample_count;
-
+    
+            // i'm thinking about the meaning of population here,
+            // in the context of having 0 measured population.
+            // can we be clear on what the distributions are of, here?
+            //  we vor
+            
+            if (population_frequency <= 0) {
+                if (sample_frequency > 0) {
+                    unknown_proportion = 0;
+                }
+                continue;
+            } else if (population_frequency >= population_count) {
+                if (sample_frequency < sample_count) {
+                    unknown_proportion = 0;
+                }
+                continue;
+            }
+    
+            double population_proportion = population_count > 0 ? population_frequency / population_count : 0;
+            double sample_proportion = sample_count > 0 ? sample_frequency / sample_count : 0;
+    
             // binomial distribution, might be correct
             double theorised_sample_mean = (sample_count + 1) * population_proportion;
             double theorised_sample_variance = theorised_sample_mean * (1 - population_proportion);
             double theorised_sample_deviation = sqrt(theorised_sample_variance);
             double sample_upper_z = (sample_frequency + 1 - theorised_sample_mean) / theorised_sample_deviation;
             double sample_lower_z = (sample_frequency + 0 - theorised_sample_mean) / theorised_sample_deviation;
-
+    
             // likelihood of this result bucket happening, given this unknown value
             // this is a bucket analogous to the result bucket
             // it might end up being helpful to show these histograms here, and to test them in qa.  they could be cached in a member variable.
             double sample_likelihood = 0.5 * (erfc(-sample_upper_z * M_SQRT1_2) - erfc(-sample_lower_z * M_SQRT1_2));
-
+    
             // the unknown likelihood is the likelihood of all the sample likelihoods happening, given the population
             unknown_proportion *= sample_likelihood;
           }
+
+          out[unknown_bucket] = unknown_proportion;
         }
       }
 
@@ -244,7 +276,7 @@ private:
     if (result >= 0 && result < d_nbuckets) {
       d_result_map[result].add_sequence(bucket_head, result_idx());
       if (d_output_idx != result_idx()) {
-        d_unknown_result_map[bucket_head[d_output_idx]][result].add_sequence(bucket_head + first_parameter_idx(), d_output_idx);
+        d_unknown_result_map[bucket_head[d_output_idx]][result].add_sequence(bucket_head, d_output_idx);
       }
     }
   }
