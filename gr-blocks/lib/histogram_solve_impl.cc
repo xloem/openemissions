@@ -12,6 +12,13 @@
 namespace gr {
 namespace openemissions {
 
+/*
+ * notes on phone.
+ * forward and reverse solve are different cases.
+ * for both, we output equation result.
+ * for reverse solve, we use normal distribution to make distribution of likelihood of sampling from one result distribution to get the other
+ */
+
 template <typename freq_type, typename... Doubles>
 class histogram_solve_impl : public histogram_solve<freq_type, Doubles...>
 {
@@ -60,7 +67,10 @@ private:
 
   // each output item is the sum of the products of sequences of input items,
   // different for each output item
-  std::vector<sparse_dot> d_output_map;
+  std::vector<sparse_dot> d_result_map;
+
+  // this breaks the result map out into the components made by each possible unknown value
+  std::vector<std::vector<sparse_dot>> d_unknown_result_map;
 
 public:
   /*
@@ -73,7 +83,7 @@ public:
       d_min(min),
       d_max(max),
       d_expr(expr),
-      d_output_idx(output_idx > 0 ? output_idx - 1 : sizeof...(Doubles)),
+      d_output_idx(output_idx),
       d_nbuckets(nbuckets)
   {
     update_coeffs();
@@ -93,21 +103,70 @@ public:
   {
     const freq_type **in = reinterpret_cast<const freq_type**>(input_items.data());
     freq_type *out = reinterpret_cast<freq_type*>(output_items[0]);
+    //memset(out, 0, sizeof(freq_type) * noutput_items);
+
+    std::vector<double> hist_cache(noutput_items);
 
     for (size_t item = 0; item < noutput_items; item ++) {
-      double total = 0;
-      for (size_t unknown_bucket = 0; unknown_bucket < d_nbuckets; unknown_bucket ++) {
-        double unknown = unknown_bucket * d_bucket_to_value_coeff + d_bucket_to_value_offset;
-        freq_type & sample = out[unknown_bucket];
-        sample = d_output_map[unknown_bucket].calc(in, item * d_nbuckets);
-        total += sample;
-      }
-      if (std::is_floating_point<freq_type>::value) {
-          total = 1.0 / total;
-          for (size_t unknown_bucket = 0; unknown_bucket < d_nbuckets; unknown_bucket ++) {
-            out[unknown_bucket] *= total;
+
+      if (d_output_idx == result_idx()) {
+        // forward solving
+        for (size_t unknown_bucket = 0; unknown_bucket < d_nbuckets; unknown_bucket ++) {
+          freq_type & unknown_proportion = out[unknown_bucket];
+
+          double unknown = unknown_bucket * d_bucket_to_value_coeff + d_bucket_to_value_offset;
+          unknown_proportion = d_result_map[unknown_bucket].calc(in, item * d_nbuckets);
+        }
+      } else {
+        // reverse solving
+        double measured_result_total = 0;
+        for (size_t result_bucket = 0; result_bucket < d_nbuckets; result_bucket ++) {
+          measured_result_total += in[result_input_idx()][result_bucket];
+        }
+
+        for (size_t unknown_bucket = 0; unknown_bucket < d_nbuckets; unknown_bucket ++) {
+          freq_type & unknown_proportion = out[unknown_bucket];
+
+          double calculated_result_total = 0;
+          for (size_t result_bucket = 0; result_bucket < d_nbuckets; result_bucket ++) {
+            double frequency = d_unknown_result_map[unknown_bucket][result_bucket].calc(in, item * d_nbuckets);
+            calculated_result_total += frequency;
+            hist_cache[result_bucket] = frequency;
           }
+
+          unknown_proportion = calculated_result_total;
+          for (size_t result_bucket = 0; result_bucket < d_nbuckets; result_bucket ++) {
+            // calculate potential result bucket and compare with reality
+
+            double calculated_result_frequency = hist_cache[result_bucket];
+            freq_type const & measured_result_frequency = in[result_input_idx()][result_bucket];
+
+            double population_frequency = calculated_result_frequency;
+            double population_count = calculated_result_total;
+            double sample_frequency = measured_result_frequency;
+            double sample_count = measured_result_total;
+
+            double population_proportion = population_frequency / population_count;
+            double sample_proportion = sample_frequency / sample_count;
+
+            // binomial distribution, might be correct
+            double theorised_sample_mean = (sample_count + 1) * population_proportion;
+            double theorised_sample_variance = theorised_sample_mean * (1 - population_proportion);
+            double theorised_sample_deviation = sqrt(theorised_sample_variance);
+            double sample_upper_z = (sample_frequency + 1 - theorised_sample_mean) / theorised_sample_deviation;
+            double sample_lower_z = (sample_frequency + 0 - theorised_sample_mean) / theorised_sample_deviation;
+
+            // likelihood of this result bucket happening, given this unknown value
+            // this is a bucket analogous to the result bucket
+            // it might end up being helpful to show these histograms here, and to test them in qa.  they could be cached in a member variable.
+            double sample_likelihood = 0.5 * (erfc(-sample_upper_z * M_SQRT1_2) - erfc(-sample_lower_z * M_SQRT1_2));
+
+            // the unknown likelihood is the likelihood of all the sample likelihoods happening, given the population
+            unknown_proportion *= sample_likelihood;
+          }
+        }
       }
+
       out += d_nbuckets;
     }
   
@@ -148,7 +207,7 @@ public:
 
   size_t output_idx() const override
   {
-    return d_output_idx < sizeof...(Doubles) ? d_output_idx + 1 : 0;
+    return d_output_idx;
   }
 
   size_t nbuckets() const override
@@ -168,20 +227,25 @@ private:
     d_value_to_bucket_coeff = d_nbuckets / range;
     d_value_to_bucket_offset = -d_value_to_bucket_coeff * d_min - /*slide down*/0.5;
 
-    d_output_map.clear();
-    d_output_map.resize(d_nbuckets);
+    d_result_map.clear();
+    d_result_map.resize(d_nbuckets);
+    d_unknown_result_map.clear();
+    d_unknown_result_map.resize(d_nbuckets, std::vector<sparse_dot>{d_nbuckets});
     size_t buckets[sizeof...(Doubles) + 1];
-    update_expr_map(buckets, buckets);
+    update_expr_map(buckets, buckets + first_parameter_idx());
   }
 
-  // LATER? this is just sampling midpoints, but it could maybe do sub-bucket ranges by outputing weights for each sequence
+  // LATER maybe? this is just sampling midpoints, but it could maybe do sub-bucket ranges by outputing weights for each sequence
   void update_expr_map(size_t *bucket_head, size_t *bucket_ptr, Doubles... params)
   {
-    size_t & result = *bucket_ptr;
+    size_t & result = bucket_head[result_idx()];
     result = d_expr(params...) * d_value_to_bucket_coeff + d_value_to_bucket_offset;
 
     if (result >= 0 && result < d_nbuckets) {
-      d_output_map[bucket_head[d_output_idx]].add_sequence(bucket_head, d_output_idx);
+      d_result_map[result].add_sequence(bucket_head, result_idx());
+      if (d_output_idx != result_idx()) {
+        d_unknown_result_map[bucket_head[d_output_idx]][result].add_sequence(bucket_head + first_parameter_idx(), d_output_idx);
+      }
     }
   }
   // recursive template function walks each variable, trying all combinations
@@ -193,6 +257,31 @@ private:
       double value = bucket * d_bucket_to_value_coeff + d_bucket_to_value_offset;
       update_expr_map(bucket_head, bucket_ptr + 1, value, params...);
     }
+  }
+
+  size_t var_idx_to_input_idx(size_t var_idx) const
+  {
+    return var_idx < d_output_idx ? var_idx : var_idx - 1;
+  }
+
+  size_t result_input_idx() const
+  {
+    size_t constexpr var_idx = result_idx();
+    if (var_idx == 0) {
+      return var_idx;
+    } else {
+      return var_idx_to_input_idx(var_idx);
+    }
+  }
+
+  static constexpr size_t result_idx()
+  {
+    return 0;
+  }
+
+  static constexpr size_t first_parameter_idx()
+  {
+    return 1;
   }
 };
 

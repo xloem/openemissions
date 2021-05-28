@@ -177,7 +177,7 @@ public:
       
       if (std::is_floating_point<freq_type>::value) {
         for (size_t bucket = 0; bucket < d_nbuckets; bucket ++) {
-          *out = freq_type(d_histogram->d_overall[bucket]) / d_histogram->d_total;
+          *out = freq_type(d_histogram->d_overall[bucket]);// / d_histogram->d_total;
           out ++;
         } 
       } else {

@@ -84,12 +84,12 @@ class qa_histogram(gr_unittest.TestCase):
         self.tb.run()
 
         np.testing.assert_almost_equal([
-            0.0, 0.0, 0.0, 1.0,
-            0.0, 1/2, 0.0, 1/2,
-            0.0, 0.0, 0.0, 1.0,
-            1/2, 0.0, 0.0, 1/2,
-            0.0, 1/3, 0.0, 2/3,
-            0.0, 2/4, 0.0, 2/4
+            0, 0, 0, 1,
+            0, 1, 0, 1,
+            0, 0, 0, 1,
+            1, 0, 0, 1,
+            0, 1, 0, 2,
+            0, 2, 0, 2
         ], sink_f32_f32.data(), 7)
 
     def test_vinlen2(self):
@@ -113,9 +113,9 @@ class qa_histogram(gr_unittest.TestCase):
         self.tb.run()
 
         np.testing.assert_almost_equal([
-            0.0, 1/2, 0.0, 1/2,
-            1/2, 0.0, 0.0, 1/2,
-            0.0, 2/4, 0.0, 2/4
+            0.0, 1, 0.0, 1,
+            1, 0.0, 0.0, 1,
+            0.0, 2, 0.0, 2
         ], sink_f32_f32.data(), 7)
 
 

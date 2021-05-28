@@ -42,7 +42,7 @@ parameters:
 -   id: output_idx
     label: Unknown
     dtype: enum
-    default: 0
+    default: 1
     options: [0, 1, 2, 3]
     option_labels: ["y", "x1", "x2", "x3"]
 -   id: nbuckets
