@@ -74,9 +74,7 @@ asserts:
 -   ${ max > min }
 
 documentation: |-
-    Sorts incoming samples into histogram buckets.  If the output datatype
-    can represent fractional values, they will be divided by the total count
-    to represent relative frequency.
+    Sorts incoming samples into histogram buckets.
 
     Every single sample, the complete histogram is output as a vector with
     nbuckets items.

@@ -31,6 +31,9 @@ private:
 
   std::vector<double> d_unk_vec;
   std::vector<double> d_pop_vec;
+  std::vector<bool> d_pop_mask;
+
+  bool d_warned;
 
   // sparse_dot is used to calculate each output value and could likely be optimised
   class sparse_dot {
@@ -63,26 +66,28 @@ private:
       }
   
       template <typename T>
-      T calc(const T ** knowns, size_t offset, size_t skip_idx) {
+      T calc(const T ** knowns, size_t offset, size_t skip_idx, bool & zero_density) {
           T result = 0;
+          bool found_zero_density = true;
           for (size_t sequence = 0; sequence < index_sequences.size();) {
               T product = 1;
               for (size_t coeff = 0; coeff < sizeof...(Doubles); coeff ++, sequence ++) {
                 if (coeff != skip_idx) {
                     product *= knowns[coeff][offset + index_sequences[sequence]];
+                    found_zero_density = false;
                 }
               }
               result += product;
           }
+          zero_density = found_zero_density;
           return result;
       }
   };
 
+  // if the result is the output unknown,
   // each output item is the sum of the products of sequences of input items,
-  // different for each output item
-  std::vector<sparse_dot> d_result_map;
-
-  // this breaks the result map out into the components made by each possible unknown value
+  // different for each output item.
+  // otherwise the components made by each possible unknown value are broken out
   std::vector<std::vector<sparse_dot>> d_unknown_result_map;
 
 public:
@@ -92,7 +97,7 @@ public:
   histogram_solve_impl(double min, double max, std::function<double(Doubles...)> expr, size_t output_idx, size_t nbuckets)
     : gr::sync_block("histogram_solve",
             gr::io_signature::make(sizeof...(Doubles), sizeof...(Doubles), sizeof(freq_type) * nbuckets),
-            gr::io_signature::make(1, 1, sizeof(freq_type) * nbuckets)),
+            gr::io_signature::make(1, output_is_forward_solving(output_idx) ? 1 : 2, sizeof(freq_type) * nbuckets)),
       d_min(min),
       d_max(max),
       d_expr(expr),
@@ -107,6 +112,12 @@ public:
    */
   ~histogram_solve_impl()
   {
+  }
+
+  bool start() override
+  {
+    d_warned = false;
+    return sync_block::start();
   }
 
   int
@@ -124,13 +135,13 @@ public:
 
     for (size_t item = 0; item < noutput_items; item ++) {
 
-      if (d_output_idx == result_idx()) {
+      if (is_forward_solving()) {
         // forward solving
         for (size_t unknown_bucket = 0; unknown_bucket < d_nbuckets; unknown_bucket ++) {
           freq_type & unknown_proportion = out[unknown_bucket];
 
           double unknown = unknown_bucket * d_bucket_to_value_coeff + d_bucket_to_value_offset;
-          unknown_proportion = d_result_map[unknown_bucket].calc(in, item * d_nbuckets);
+          unknown_proportion = d_unknown_result_map[0][unknown_bucket].calc(in, item * d_nbuckets);
         }
       } else {
         // reverse solving
@@ -139,6 +150,7 @@ public:
         double max_sample = 0;
         d_unk_vec.resize(d_nbuckets);
         d_pop_vec.resize(d_nbuckets);
+        d_pop_mask.resize(d_nbuckets);
 
         for (size_t result_bucket = 0; result_bucket < d_nbuckets; result_bucket ++) {
             const double & sample = in[result_idx()][item * d_nbuckets + result_bucket];
@@ -148,22 +160,78 @@ public:
         }
 
 
+        size_t unknowns_leaving_model = 0;
         for (size_t unknown_bucket = 0; unknown_bucket < d_nbuckets; unknown_bucket ++) {
             double max_population = 0;
+            bool this_unknown_leaves_model = false;
             for (size_t result_bucket = 0; result_bucket < d_nbuckets; result_bucket ++) {
+                bool found_zero;
                 double & calculated_result_population = d_pop_vec[result_bucket];
-                calculated_result_population = d_unknown_result_map[unknown_bucket][result_bucket].calc(in, item * d_nbuckets, result_idx());
+                calculated_result_population = d_unknown_result_map[unknown_bucket][result_bucket].calc(in, item * d_nbuckets, result_idx(), found_zero);
+                bool leaves_model;
                 if (calculated_result_population > max_population) {
                     max_population = calculated_result_population;
+                    leaves_model = false;
+                } else {
+                    leaves_model =
+                            found_zero &&
+                            in[result_idx()][item * d_nbuckets + result_bucket] > 0;
+                    this_unknown_leaves_model |= leaves_model;
                 }
+                d_pop_mask[result_bucket] = leaves_model;
+            }
+            if (this_unknown_leaves_model) {
+                unknowns_leaving_model ++;
             }
             double & unknown_result_outcomes = d_unk_vec[unknown_bucket];
             unknown_result_outcomes = max_population;
             for (size_t result_bucket = 0; result_bucket < d_nbuckets; result_bucket ++) {
-                unknown_result_outcomes *= pow(d_pop_vec[result_bucket] / max_population, in[result_idx()][item * d_nbuckets + result_bucket] / max_sample);
+                // We interpret the calculated histogram as a population,
+                // and count how many samplings give the measured bucket.
+                //
+                // The equation for the count of samplings that give a single bucket:
+                // Combinations(sampcount, sampbinheight) * pow(popbinheight, sampbinheight) * pow(popcount - popbinheight, sampcount - sampbinheight)
+                //
+                // The equation for the count of samplings that give a specific histogram:
+                // sum[ Combinations(sampcountremaining, sampbinheight) * pow(popbinheight, sampbinheight) ]
+                //
+                // We're considering the whole histogram, for every unknown.
+                //
+                // Since we care about the ratio between the unknowns, the only thing that changes is popbinheight and the combinations terms can be factored out and ignored.
+                // The other terms are divided by their maximums to prevent overflow
+                //
+                // TODO: speed up
+                //  - we could consider only dense bins
+                //  - we could approximate the numerical result
+                //  - we could only consider the last item in the buffer
+                //  - we could update based on a user-provided frequency
+                //  the user can also decimate the incoming histograms.
+
+                double sampbinheight = in[result_idx()][item * d_nbuckets + result_bucket] / max_sample;
+                //if (d_pop_mask[result_bucket]) {
+                    unknown_result_outcomes *= pow(d_pop_vec[result_bucket] / max_population, sampbinheight);
+                //} else {
+                //    // this condition happens if some of the result data is unmodelled
+                //    // this could happen if the bounds are too small, or if sampled data
+                //    // is stretched ...
+                //    // a wrong answer will result.  there are various ways to try to fix it,
+                //    // but the best answer is achieved if the user avoids the situation.
+                //}
             }
             total_outcomes += unknown_result_outcomes;
         }
+        /*
+        // basically, if data from one of the inputs leaves the bounds of a histogram,
+        // then this block produces quite wrong results.
+        // but the check below seems to end up being roughly unrelated to that.
+        if (unknowns_leaving_model >= d_nbuckets / 4 && !d_warned) {
+            GR_LOG_WARN(this->d_logger, "Result has density in unmodelled areas for " + std::to_string(unknowns_leaving_model * 100 / d_nbuckets) + "% of the unknown values.");
+            GR_LOG_WARN(this->d_logger, "Is background noise included in equation?  Do bounds of histogram surround signal?");
+            GR_LOG_WARN(this->d_logger, "When calculating models, only data within histograms is included.  It is expected that data coming from outside histogram bounds is nonpresent or simulated.");
+            GR_LOG_WARN(this->d_logger, "Further warnings from this block suppressed.");
+            d_warned = true;
+        }
+        */
         for (size_t unknown_bucket = 0; unknown_bucket < d_nbuckets; unknown_bucket ++) {
             out[unknown_bucket] = d_unk_vec[unknown_bucket]; // / total_outcomes;
         }
@@ -454,14 +522,12 @@ private:
     d_value_to_bucket_coeff = d_nbuckets / range;
     d_value_to_bucket_offset = -d_value_to_bucket_coeff * d_min - /*slide down*/0.5;
 
-    d_result_map.clear();
-    d_result_map.resize(d_nbuckets);
     d_unknown_result_map.clear();
     d_unknown_result_map.resize(d_nbuckets, std::vector<sparse_dot>{d_nbuckets});
     size_t buckets[sizeof...(Doubles) + 1];
-    std::vector<size_t> result_histogram(d_nbuckets, 0);
-    size_t result_total = 0;
-    update_expr_map(result_histogram, result_total, buckets, buckets + first_parameter_idx());
+    //std::vector<size_t> result_histogram(d_nbuckets, 0);
+    //size_t result_total = 0;
+    update_expr_map(/*result_histogram, result_total, */buckets, buckets + first_parameter_idx());
 
     //d_result_independent_probability.resize(d_nbuckets);
     //for (size_t w = 0; w < d_result_independent_probability.size(); w ++) {
@@ -479,36 +545,30 @@ private:
   }
 
   // LATER maybe? this is just sampling midpoints, but it could maybe do sub-bucket ranges by outputing weights for each sequence
-  void update_expr_map(std::vector<size_t> & result_histogram, size_t & result_total, size_t *bucket_head, size_t *bucket_ptr, Doubles... params)
+  void update_expr_map(/*std::vector<size_t> & result_histogram, size_t & result_total, */size_t *bucket_head, size_t *bucket_ptr, Doubles... params)
   {
     size_t & result = bucket_head[result_idx()];
     result = d_expr(params...) * d_value_to_bucket_coeff + d_value_to_bucket_offset;
     //std::cerr << "expr("; packcerr(params...); std::cerr << ") = " << (result * d_bucket_to_value_coeff + d_bucket_to_value_offset) << std::endl;
 
     if (result >= 0 && result < d_nbuckets) {
-      d_result_map[result].add_sequence(bucket_head, result_idx());
-      if (d_output_idx != result_idx()) {
-        //std::cerr << "d_unknown_result_map: result=" << result << " stems from unknown=" << bucket_head[d_output_idx] << " via";
-        for (size_t w = 0; w < sizeof...(Doubles); w ++) {
-          if (w != d_output_idx) {
-            //std::cerr << " " << bucket_head[w];
-          }
-        }
-        //std::cerr << std::endl;
+      if (is_reverse_solving()) {
         d_unknown_result_map[bucket_head[d_output_idx]][result].add_sequence(bucket_head, d_output_idx);
-        result_histogram[result] += 1;
-        result_total += 1;
+        //result_histogram[result] += 1;
+        //result_total += 1;
+      } else {
+        d_unknown_result_map[0][result].add_sequence(bucket_head, result_idx());
       }
     }
   }
   // recursive template function walks each variable, trying all combinations
   template <typename... Params>
-  void update_expr_map(std::vector<size_t> & result_histogram, size_t & result_total, size_t *bucket_head, size_t *bucket_ptr, Params... params)
+  void update_expr_map(/*std::vector<size_t> & result_histogram, size_t & result_total, */size_t *bucket_head, size_t *bucket_ptr, Params... params)
   {
     size_t & bucket = *bucket_ptr;
     for (bucket = 0; bucket < d_nbuckets; bucket ++) {
       double value = bucket * d_bucket_to_value_coeff + d_bucket_to_value_offset;
-      update_expr_map(result_histogram, result_total, bucket_head, bucket_ptr + 1, value, params...);
+      update_expr_map(/*result_histogram, result_total, */bucket_head, bucket_ptr + 1, value, params...);
     }
   }
 
@@ -535,6 +595,26 @@ private:
   static constexpr size_t first_parameter_idx()
   {
     return 1;
+  }
+
+  inline bool is_forward_solving() const
+  {
+    return output_is_forward_solving(d_output_idx);
+  }
+
+  inline bool is_reverse_solving() const
+  {
+    return output_is_reverse_solving(d_output_idx);
+  }
+
+  static constexpr bool output_is_forward_solving(size_t output_idx)
+  {
+    return result_idx() == output_idx;
+  }
+
+  static constexpr bool output_is_reverse_solving(size_t output_idx)
+  {
+    return result_idx() != output_idx;
   }
 };
 

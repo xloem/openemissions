@@ -169,7 +169,8 @@ public:
           d_histogram->d_overall[bucket] ++;
           d_histogram->d_total ++;
         } else if (!d_warned) {
-          GR_LOG_WARN(this->d_logger, "value " + std::to_string(value) + " outside histogram range [" + std::to_string(d_min) + ", " + std::to_string(d_max) + ")");
+          GR_LOG_WARN(this->d_logger, "Value " + std::to_string(value) + " outside histogram range [" + std::to_string(d_min) + ", " + std::to_string(d_max) + ").");
+          GR_LOG_WARN(this->d_logger, "When this happens, incorrect data develops.")
           GR_LOG_WARN(this->d_logger, "Further range warnings from this block suppressed.");
           d_warned = true;
         }

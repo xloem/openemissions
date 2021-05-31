@@ -122,6 +122,46 @@ class qa_histogram_solve(gr_unittest.TestCase):
 
         print(sink_addend_f32.data())
 
+    def test_solve_identity_mul_f32(self):
+        from random import choices, randint
+        dist = [randint(0, 100) for x in range(8)]
+        #data1 = 
+        #for item in choices(range(len(sum_dist)), sum_dist, k=100000):
+        sum_dist = [0, 1/4, 1/4, 1/4, 1/4, 0, 0, 0]
+        addend_dist = [0, 0, *sum_dist[:-2]]
+        sum_data = [0] * len(sum_dist)
+        addend_data = [0] * len(addend_dist)
+        for item in choices(range(len(sum_dist)), sum_dist, k=100000):
+            sum_data[item] += 1
+        src_sum_f32 = blocks.vector_source_f(
+            data = sum_data,
+            #data = [0, 20/4, 20/4, 20/4, 20/4, 0, 0, 0],
+            #data = [0, 1/4, 1/4, 1/4, 1/4, 0, 0, 0],
+            vlen = 8
+        )
+        #break1 = randint(0, 40)
+        #break2 = randint(0, 40) + break1
+        #break3 = randint(0, 40) + break2
+        #total = randint(0, 40) + break3
+        for item in choices(range(len(sum_dist)), sum_dist, k=100000):
+            addend_data[item] += 1
+        src_addend_f32 = blocks.vector_source_f(
+            #data = [0, 0, 0, randint(0, 40), randint(0, 40), randint(0, 40), randint(0, 40), 0],
+            #data = [0, 0, 0, break1 / total, (break2 - break1) / total, (break3 - break2) / total, (total - break3) / total, 0],
+            #data = [0, 0, 0, 300, 501, 150, 503, 0],
+            data = addend_data,
+            vlen = 8
+        )
+        reverse_add_f32 = histogram_solve_f32_2(-3.5, 4.5, lambda x, y: x + y, output_idx = 1, nbuckets = 8)
+        sink_addend_f32 = blocks.vector_sink_f(8)
+
+        self.tb.connect(src_sum_f32, reverse_add_f32, sink_addend_f32)
+        self.tb.connect(src_addend_f32, (reverse_add_f32, 1))
+
+        self.tb.run()
+
+        print(sink_addend_f32.data())
+
     def test_2hist_forward_mul_f32(self):
         src1_f32 = blocks.vector_source_f(
             data = [

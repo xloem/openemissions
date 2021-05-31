@@ -30,7 +30,7 @@ parameters:
     label: Maximum
     dtype: real
 -   id: expr
-    label: y(x1,x2?,x3?) =
+    label: y0(x1,x2?,x3?) =
     dtype: string
     default: "x1 + x2"
 -   id: nvars
@@ -41,7 +41,7 @@ parameters:
     label: Unknown
     dtype: enum
     default: 1
-    options: ["y", "x1", "x2", "x3"]
+    options: ["y0", "x1", "x2", "x3"]
     option_attributes:
         idx: [0, 1, 2, 3]
 -   id: nbuckets
