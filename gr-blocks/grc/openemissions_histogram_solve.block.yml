@@ -9,11 +9,9 @@ templates:
             ${min},
             ${max},
             lambda x1=0,x2=0,x3=0: eval(${expr}, locals(), globals()),
-            ${output_idx},
+            ${unknown.idx},
             ${nbuckets}
         )
-
-#            ${output_idx - 1 if output_idx > 0 else nvars},
 
 parameters:
 -   id: freq_type
@@ -39,12 +37,13 @@ parameters:
     label: Knowns
     dtype: int
     default: 2
--   id: output_idx
+-   id: unknown
     label: Unknown
     dtype: enum
     default: 1
-    options: [0, 1, 2, 3]
-    option_labels: ["y", "x1", "x2", "x3"]
+    options: ["y", "x1", "x2", "x3"]
+    option_attributes:
+        idx: [0, 1, 2, 3]
 -   id: nbuckets
     label: Histogram Vec Length
     dtype: int
