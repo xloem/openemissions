@@ -1,3 +1,5 @@
+This file is a little confused, organisation and clarity pending.
+
 Using gnuradio blocks lets one move towards working with open freedom communities.
 Gnuradio blocks are all documented at the gnuradio wiki.
 
@@ -43,20 +45,61 @@ PiGPIO Sink Block:
 
 - [X] reduce wave buffer percentage so it doesn't underrun
 - [ ] record direct signal to file, then switch to using antenna
-- [ ] start with a downsampled 40 hertz signal so we can do the juicy new stuff first before the signal drift recorrelation
+- [X] start with a downsampled 40 hertz signal so we can do the juicy new stuff first before the signal drift recorrelation
 - [ ] accumulate well-known distribution of samples for each packet offset [might theoretically feed back into this once signal power is known, to recalibrate live]
             store it in a matrix variable, a vector of distributions
-            {foreground model: gives probability distribution given time-point}
+            {foreground model: could be a vector-valued stream of the probability distribution of the current time-point}
 - [ ] accumulate distribution of samples of background noise from waveform of known zero times
             if there are things near the tuning frequency, there will be periodic components here, and using a frequency transform could give better prediction
                 if the data is treated as short real-valued FFTs, or downsampled below the receiver bandwidth, then changes from real signals could really decrease
                 ffts could also be phase-aligned, most simplistically by rotating their data, or the data could be treated as one big frequency-domain chunk
-            {background model: gives probability distribution given time-point}
+            {background model: could be a vector-valued stream of the probability distribution of the current time-point}
 - [ ] loop to identify power distribution:
-        for each packet offset:
-            for each item of background model:
-                use foreground model to calculate what signal power this combination of possibilities implies
-                accumulate weighted product into power distribution.  note: modelled signal strength as data density among integral of signal strength
+        for each possible power value:
+            calculate the chance of making the sum distribution from the background and foreground model,
+                loop through each bucket in the sum distribution
+                    take the bucket value as a proportion of total samples
+                    calculate the likelihood of reaching that proportion if the population is sampled that many times
+                        in the population, we can check the population bucket to get the likelihood (binomial p)
+                        then in the sum distribution, we can use the total samples (binomial n)
+                        we can approximate a normal distribution, mean=mu=n*p, variance=sigma^2=stddev^2=mean*(1-p)
+                        then the low and high bounds of the bucket value make an area under the normal cdf = 0.5 * erfc(-z * M_SQRT1_2) where z = (x - mean) / stddev
+                the product of likelihoods for all buckets makes the chance of the sum distribution at this power
+        normalise the result to exclude nonpresent scenarios
 - [ ] draw live power distribution
 - [ ] feed back to recalibrate signal distribution?
         once power is well known, the background noise distrubiton can be re-iterated from the samples to reform a signal distribution
+
+Further block ideas:
+    - [ ] histogram sampling block.
+                exhaustively samples histograms, once in each way for using to test probability code, in a random order.  may optionally stop or repeat after all possible sample combinations are output.
+                optionally outputs as a vector, to collect as a sampled histogram with generation block
+    - [ ] histogram generation block improvements.
+                - would like an option to reset the histogram every vector, to see only histograms made from individual vectors
+                - could be nice to do the tagged stream property label thing, to make many different histograms.  maybe this already done.
+    - [ ] combinations block
+                integration block for forming scenarios to compare with.
+                exhaustively combines the items on its inputs, into its outputs, repeating things many times.  it outputs all the reorderings its data could have been sent with.
+                it could store where it is after one option, and report that no input items were processed until it exhausts all options, which will help if it gets far into its input where many combinations exist.
+
+
+    Here is a way to simulate histogram probability for verifying the solver:
+            1. we randomly and exhaustively sample all population histograms.  this axis shows how a proposed solution equation depends on the input distribution.
+                -> histogram sampler can do this
+            2. we repeatedly exhaustively iterate the unknowns.  this axis is simply a data label.
+                -> this is just a simple sawtooth wave
+            3. we perform a computation on the population histogram.  this forms a result histogram for every unknown.
+                -> histogram solver/operator can do this
+            4. we exhaustively sample the result histogram, forming every possible sampling for every possible unknown.  this axis is another data label.
+                -> histogram sampler can do this
+                -> we can make a combinations integration block, similar to an interleaving block, that produces output that is every combination of its input.
+                   this will slow the inputs down properly.
+            5A. we filter the results histograms and the unknown data, such that only one result histogram is considered
+                -> there may be a block to filter based on tags
+            6A. we plot a histogram of unknown values.  this shows the true probability of an unknown being correct, given the histogram.
+                -> histogram generator can do this.
+                   either the unknown could be a signal, or the histogram generator can use tags as an input, or a tag could be converted to a histogram
+            7B. we also filter the results histograms and the unknown data, such that only one histogram bucket is considered
+                -> there may be a block that takes only 1 element from a vector
+            8B. we plot a histogram of unknown values against that bucket.  this shows the true probability of an unknown being correct, given the bucket.
+                -> histogram generator can do this.
