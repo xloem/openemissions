@@ -14,6 +14,60 @@
 namespace gr {
 namespace openemissions {
 
+namespace detail {
+
+// a square volume with a compile-time number of dimensions
+// i think these were standardised or are on a standards track, somewhere, not sure ...
+template <typename T, size_t N>
+class square_ctd : public std::vector<T>
+{
+public:
+  square_ctd(size_t edgelength, const T & value = {})
+  : d_edgelength(0)
+  {
+    resize(edgelength, value);
+  }
+
+  void resize(size_t edgelength, const T & value = {})
+  {
+    size_t size = 1;
+    for (size_t dim = 0; dim < N; dim ++) {
+      size *= edgelength;
+    }
+    std::vector<T>::reserve(size);
+    std::vector<T>::resize(size, value);
+  }
+
+  size_t size() const
+  {
+    return d_edgelength;
+  }
+
+  T & operator[](const size_t * coords)
+  {
+    return std::vector<T>::operator[](coords2coord(coords));
+  }
+
+  const T & operator[](const size_t * coords) const
+  {
+    return std::vector<T>::operator[](coords2coord(coords));
+  }
+
+private:
+  size_t d_edgelength;
+
+  constexpr size_t coords2coord(const size_t * coords)
+  {
+    size_t coord = 0;
+    for (size_t idx = 0; idx < N; idx ++) {
+      coord = (coord * d_edgelength) + coords[idx];
+    }
+    return coord;
+  }
+};
+
+}
+
 template <typename freq_type, typename... Doubles>
 class histogram_solve_impl : public histogram_solve<freq_type, Doubles...>
 {
@@ -527,56 +581,79 @@ private:
     d_unknown_result_map.clear();
     d_unknown_result_map.resize(d_nbuckets, std::vector<sparse_dot>{d_nbuckets});
     size_t buckets[sizeof...(Doubles) + 1];
-    //std::vector<size_t> result_histogram(d_nbuckets, 0);
-    //size_t result_total = 0;
-    update_expr_map(/*result_histogram, result_total, */buckets, buckets + first_parameter_idx());
 
-    //d_result_independent_probability.resize(d_nbuckets);
-    //for (size_t w = 0; w < d_result_independent_probability.size(); w ++) {
-        //std::cerr << result_histogram[w] << " ";
-        //d_result_independent_probability[w] = (double)result_histogram[w] / result_total;
-    //}
-    //std::cerr << std::endl;
+    size_t * bucket_ptr = buckets + first_parameter_idx();
+    size_t & outermost_bucket = *bucket_ptr;
+    detail::square_ctd<double, sizeof...(Doubles)> last_ndplane(d_nbuckets);
+    detail::square_ctd<double, sizeof...(Doubles)> this_ndplane(d_nbuckets);
+    for (outermost_bucket = 0; outermost_bucket < d_nbuckets; outermost_bucket ++) {
+      double value = outermost_bucket * d_bucket_to_value_coeff + d_bucket_to_value_offset;
+      // two stages: first make the nd-plane of result points
+      // then update the expression map from the densities implied by the two surrounding nd-planes of result points
+
+      // it would be helpful if the buckets had no skipped hole.
+      // variable indices have no output hole
+      // input indices have an output hole
+      // the result hole is unconsidered.  this is about the result hole
+      // we define
+      // param index: has no result
+      // input index: has no output
+      // variable index: has all parts in order, with result at result_idx() and output at d_output_idx
+      // these values are variable indices.  we want param indices.  those include the output if it's not the result.
+      update_expr_map(buckets, bucket_ptr, value);
+    }
   }
 
   void packcerr(){}
   template <typename... d>
   void packcerr(double value, d... values) {
-    //std::cerr << "," << value;
+    std::cerr << "," << value;
     packcerr(values...);
   }
 
   // LATER maybe? this is just sampling midpoints, but it could maybe do sub-bucket ranges by outputing weights for each sequence
-  void update_expr_map(/*std::vector<size_t> & result_histogram, size_t & result_total, */size_t *bucket_head, size_t *bucket_ptr, Doubles... params)
+  void update_expr_map(size_t *bucket_head, size_t *bucket_ptr, Doubles... params)
   {
     size_t & result = bucket_head[result_idx()];
     result = d_expr(params...) * d_value_to_bucket_coeff + d_value_to_bucket_offset;
-    //std::cerr << "expr("; packcerr(params...); std::cerr << ") = " << (result * d_bucket_to_value_coeff + d_bucket_to_value_offset) << std::endl;
 
     if (result >= 0 && result < d_nbuckets) {
       if (is_reverse_solving()) {
         d_unknown_result_map[bucket_head[d_output_idx]][result].add_sequence(bucket_head, d_output_idx);
-        //result_histogram[result] += 1;
-        //result_total += 1;
       } else {
-        d_unknown_result_map[0][result].add_sequence(bucket_head, result_idx());
+        d_unknown_result_map[0][result].add_sequence(bucket_head, d_output_idx);
       }
     }
   }
-  // recursive template function walks each variable, trying all combinations
+  // recursive template function walks each variable, trying all combinations to see what result they produce
   template <typename... Params>
-  void update_expr_map(/*std::vector<size_t> & result_histogram, size_t & result_total, */size_t *bucket_head, size_t *bucket_ptr, Params... params)
+  void update_expr_map(size_t *bucket_head, size_t *bucket_ptr, Params... params)
   {
+    bucket_ptr ++;
+    if (bucket_ptr - bucket_head == result_idx()) {
+      bucket_ptr ++;
+    }
     size_t & bucket = *bucket_ptr;
     for (bucket = 0; bucket < d_nbuckets; bucket ++) {
       double value = bucket * d_bucket_to_value_coeff + d_bucket_to_value_offset;
-      update_expr_map(/*result_histogram, result_total, */bucket_head, bucket_ptr + 1, value, params...);
+      update_expr_map(bucket_head, bucket_ptr, value, params...);
     }
   }
+  
+  // index types.  variable index is what is passed to the constructor for the output.
+  // all variables are in order.  the output is at d_output_idx.  the result is at result_idx().
 
+  // input indices index the block inputs and have no output in them.  they are one fewer, and the output is skipped.
   size_t var_idx_to_input_idx(size_t var_idx) const
   {
     return var_idx < d_output_idx ? var_idx : var_idx - 1;
+  }
+
+  // parameter indices index the expression parameters.  they are one fewer, and the result is skipped.
+  // when the result is the output (forward-solving), the parameter index happens to be the same as the input index.
+  size_t var_idx_to_param_idx(size_t var_idx) const
+  {
+    return var_idx < result_idx() ? var_idx : var_idx - 1;
   }
 
   size_t result_input_idx() const
@@ -589,6 +666,8 @@ private:
     }
   }
 
+  // having the result index be provided by this member function
+  // provides some space towards letting the user set their own variable/input order in the UI
   static constexpr size_t result_idx()
   {
     return 0;
@@ -596,7 +675,7 @@ private:
 
   static constexpr size_t first_parameter_idx()
   {
-    return 1;
+    return result_idx() == 0 ? 1 : 0;
   }
 
   inline bool is_forward_solving() const

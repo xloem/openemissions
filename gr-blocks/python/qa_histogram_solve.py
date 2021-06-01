@@ -105,7 +105,6 @@ class qa_histogram_solve(gr_unittest.TestCase):
         print('!!! FAILING TEST DISABLED !!!')
         #self.assertEqual(np.argmax(unkhist), 5)
         #self.assertEqual(np.argmax([*unkhist[:5],*unkhist[6:]]), 4)
-        
 
     def test_scalar_reverse_add_f32_random_precise(self):
         from random import randint
@@ -143,20 +142,11 @@ class qa_histogram_solve(gr_unittest.TestCase):
             sum_data[item] += 1
         src_sum_f32 = blocks.vector_source_f(
             data = sum_data,
-            #data = [0, 20/4, 20/4, 20/4, 20/4, 0, 0, 0],
-            #data = [0, 1/4, 1/4, 1/4, 1/4, 0, 0, 0],
             vlen = 8
         )
-        #break1 = randint(0, 40)
-        #break2 = randint(0, 40) + break1
-        #break3 = randint(0, 40) + break2
-        #total = randint(0, 40) + break3
         for item in choices(range(len(addend_dist)), addend_dist, k=100000):
             addend_data[item] += 1
         src_addend_f32 = blocks.vector_source_f(
-            #data = [0, 0, 0, randint(0, 40), randint(0, 40), randint(0, 40), randint(0, 40), 0],
-            #data = [0, 0, 0, break1 / total, (break2 - break1) / total, (break3 - break2) / total, (total - break3) / total, 0],
-            #data = [0, 0, 0, 300, 501, 150, 503, 0],
             data = addend_data,
             vlen = 8
         )
