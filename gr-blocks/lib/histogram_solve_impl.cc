@@ -39,47 +39,49 @@ private:
   class sparse_dot {
   public:
       std::vector<size_t> index_sequences;
+      std::vector<double> proportions;
       
       void clear() {
           index_sequences.clear();
       }
   
-      void add_sequence(size_t *sequence, size_t output_idx) {
-          for (size_t i = 0; i < sizeof...(Doubles) + 1; i ++) {
-            if (i != output_idx) {
-              index_sequences.push_back(sequence[i]);
+      void add_sequence(size_t *sequence, size_t output_idx, double proportion = 1) {
+          // each sequence lists inputs that combine for this result
+          for (size_t w = 0; w < sizeof...(Doubles) + 1; w ++) {
+            if (w != output_idx && w != result_idx()) {
+              index_sequences.push_back(sequence[w]);
+              proportions.push_back(proportion);
             }
           }
       }
   
       template <typename T>
-      T calc(const T ** knowns, size_t offset) {
-          T result = 0;
-          for (size_t sequence = 0; sequence < index_sequences.size();) {
-              T product = 1;
-              for (size_t coeff = 0; coeff < sizeof...(Doubles); coeff ++, sequence ++) {
-                product *= knowns[coeff][offset + index_sequences[sequence]];
-              }
-              result += product;
-          }
-          return result;
-      }
-  
-      template <typename T>
-      T calc(const T ** knowns, size_t offset, size_t skip_idx, bool & zero_density) {
+      T calc(const T ** knowns, size_t offset, size_t output_idx, bool * zero_density = 0) {
           T result = 0;
           bool found_zero_density = true;
-          for (size_t sequence = 0; sequence < index_sequences.size();) {
+          for (size_t sequence = 0, proportion = 0;
+               sequence < index_sequences.size();
+               proportion ++)
+          {
               T product = 1;
-              for (size_t coeff = 0; coeff < sizeof...(Doubles); coeff ++, sequence ++) {
-                if (coeff != skip_idx) {
-                    product *= knowns[coeff][offset + index_sequences[sequence]];
-                    found_zero_density = false;
+              size_t knownidx = 0;
+              for (size_t varnum = 0; varnum < sizeof...(Doubles) + 1; varnum ++) {
+                if (varnum != output_idx) {
+                    if (varnum != result_idx()) {
+                        // the number of outcomes made by each combination of inputs
+                        // is the combined product of the number of outcomes they hold
+                        product *= knowns[knownidx][offset + index_sequences[sequence]];
+                        found_zero_density = false;
+                        sequence ++;
+                    }
+                    knownidx ++;
                 }
               }
-              result += product;
+              result += product * proportions[proportion];
           }
-          zero_density = found_zero_density;
+          if (0 != zero_density) {
+              *zero_density = found_zero_density;
+          }
           return result;
       }
   };
@@ -141,7 +143,7 @@ public:
           freq_type & unknown_proportion = out[unknown_bucket];
 
           double unknown = unknown_bucket * d_bucket_to_value_coeff + d_bucket_to_value_offset;
-          unknown_proportion = d_unknown_result_map[0][unknown_bucket].calc(in, item * d_nbuckets);
+          unknown_proportion = d_unknown_result_map[0][unknown_bucket].calc(in, item * d_nbuckets, d_output_idx);
         }
       } else {
         // reverse solving
@@ -167,7 +169,7 @@ public:
             for (size_t result_bucket = 0; result_bucket < d_nbuckets; result_bucket ++) {
                 bool found_zero;
                 double & calculated_result_population = d_pop_vec[result_bucket];
-                calculated_result_population = d_unknown_result_map[unknown_bucket][result_bucket].calc(in, item * d_nbuckets, result_idx(), found_zero);
+                calculated_result_population = d_unknown_result_map[unknown_bucket][result_bucket].calc(in, item * d_nbuckets, d_output_idx, &found_zero);
                 bool leaves_model;
                 if (calculated_result_population > max_population) {
                     max_population = calculated_result_population;
