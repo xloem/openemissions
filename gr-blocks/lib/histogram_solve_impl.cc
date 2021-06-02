@@ -22,7 +22,7 @@ template <typename T, size_t N>
 class square_ctd : public std::vector<T>
 {
 public:
-  square_ctd(size_t edgelength, const T & value = {})
+  square_ctd(size_t edgelength = 0, const T & value = {})
   : d_edgelength(0)
   {
     resize(edgelength, value);
@@ -53,14 +53,22 @@ public:
     return std::vector<T>::operator[](coords2coord(coords));
   }
 
+  // i was getting confused mapping indices, so this is just done here for now
+  T & operator()(const size_t * coords, size_t skip_idx = ~0)
+  {
+    return std::vector<T>::operator[](coords2coord(coords, skip_idx));
+  }
+
 private:
   size_t d_edgelength;
 
-  constexpr size_t coords2coord(const size_t * coords)
+  constexpr size_t coords2coord(const size_t * coords, size_t skip_idx = ~0)
   {
     size_t coord = 0;
-    for (size_t idx = 0; idx < N; idx ++) {
-      coord = (coord * d_edgelength) + coords[idx];
+    for (size_t idx = 0; idx < N + (skip_idx == ~0 ? 0 : 1); idx ++) {
+      if (skip_idx == ~0 || idx != skip_idx) {
+        coord = (coord * d_edgelength) + coords[idx];
+      }
     }
     return coord;
   }
@@ -76,6 +84,7 @@ private:
   double d_max;
   std::function<double(Doubles...)> d_expr;
   size_t d_output_idx;
+  size_t d_param_output_idx;
   size_t d_nbuckets;
 
   double d_bucket_to_value_coeff;
@@ -99,10 +108,10 @@ private:
           index_sequences.clear();
       }
   
-      void add_sequence(size_t *sequence, size_t output_idx, double proportion = 1) {
+      void add_sequence(size_t *sequence, size_t skip_idx = ~0, double proportion = 1) {
           // each sequence lists inputs that combine for this result
-          for (size_t w = 0; w < sizeof...(Doubles) + 1; w ++) {
-            if (w != output_idx && w != result_idx()) {
+          for (size_t w = 0; w < sizeof...(Doubles)/* + 1*/; w ++) {
+            if (w != skip_idx/* && w != result_idx()*/) {
               index_sequences.push_back(sequence[w]);
               proportions.push_back(proportion);
             }
@@ -110,7 +119,7 @@ private:
       }
   
       template <typename T>
-      T calc(const T ** knowns, size_t offset, size_t output_idx, bool * zero_density = 0) {
+      T calc(const T ** knowns, size_t offset, size_t output_idx = ~0, bool * zero_density = 0) {
           T result = 0;
           bool found_zero_density = true;
           for (size_t sequence = 0, proportion = 0;
@@ -158,6 +167,7 @@ public:
       d_max(max),
       d_expr(expr),
       d_output_idx(output_idx),
+      d_param_output_idx(var_idx_to_param_idx(output_idx)),
       d_nbuckets(nbuckets)
   {
     update_coeffs();
@@ -196,7 +206,6 @@ public:
         for (size_t unknown_bucket = 0; unknown_bucket < d_nbuckets; unknown_bucket ++) {
           freq_type & unknown_proportion = out[unknown_bucket];
 
-          double unknown = unknown_bucket * d_bucket_to_value_coeff + d_bucket_to_value_offset;
           unknown_proportion = d_unknown_result_map[0][unknown_bucket].calc(in, item * d_nbuckets, d_output_idx);
         }
       } else {
@@ -567,6 +576,15 @@ public:
   }
 
 private:
+  struct map_linear_interpolation
+  {
+    detail::square_ctd<double, sizeof...(Doubles) - 1> last_ndplane_values;
+    detail::square_ctd<double, sizeof...(Doubles) - 1> this_ndplane_values;
+    detail::square_ctd<size_t, sizeof...(Doubles) - 1> last_ndplane_buckets;
+    detail::square_ctd<size_t, sizeof...(Doubles) - 1> this_ndplane_buckets;
+    size_t input_buckets[sizeof...(Doubles)];
+  };
+
   void update_coeffs()
   {
     double range = (double)d_max - d_min;
@@ -580,64 +598,76 @@ private:
 
     d_unknown_result_map.clear();
     d_unknown_result_map.resize(d_nbuckets, std::vector<sparse_dot>{d_nbuckets});
-    size_t buckets[sizeof...(Doubles) + 1];
 
-    size_t * bucket_ptr = buckets + first_parameter_idx();
+    map_linear_interpolation interpolation;
+    size_t * bucket_ptr = interpolation.input_buckets;
     size_t & outermost_bucket = *bucket_ptr;
-    detail::square_ctd<double, sizeof...(Doubles)> last_ndplane(d_nbuckets);
-    detail::square_ctd<double, sizeof...(Doubles)> this_ndplane(d_nbuckets);
-    for (outermost_bucket = 0; outermost_bucket < d_nbuckets; outermost_bucket ++) {
-      double value = outermost_bucket * d_bucket_to_value_coeff + d_bucket_to_value_offset;
-      // two stages: first make the nd-plane of result points
-      // then update the expression map from the densities implied by the two surrounding nd-planes of result points
-
-      // it would be helpful if the buckets had no skipped hole.
-      // variable indices have no output hole
-      // input indices have an output hole
-      // the result hole is unconsidered.  this is about the result hole
-      // we define
-      // param index: has no result
-      // input index: has no output
-      // variable index: has all parts in order, with result at result_idx() and output at d_output_idx
-      // these values are variable indices.  we want param indices.  those include the output if it's not the result.
-      update_expr_map(buckets, bucket_ptr, value);
+    interpolation.last_ndplane_values.resize(d_nbuckets);
+    interpolation.last_ndplane_buckets.resize(d_nbuckets);
+    interpolation.this_ndplane_values.resize(d_nbuckets);
+    interpolation.this_ndplane_buckets.resize(d_nbuckets);
+    for (outermost_bucket = 0; outermost_bucket <= d_nbuckets; outermost_bucket ++) {
+      update_expr_map(interpolation, bucket_ptr, outermost_bucket > 0, bucket_to_value(outermost_bucket));
+      interpolation.this_ndplane_buckets.swap(interpolation.last_ndplane_buckets);
+      interpolation.this_ndplane_values.swap(interpolation.last_ndplane_values);
     }
   }
 
-  void packcerr(){}
-  template <typename... d>
-  void packcerr(double value, d... values) {
-    std::cerr << "," << value;
-    packcerr(values...);
+  // recursive template function walks each variable, trying all combinations to see what result they produce
+  // this function has so many arguments that i'd like it if this algorithm were eventually bundled into a class with member variables
+  template <typename... Params>
+  void update_expr_map(map_linear_interpolation & interpolation, size_t *bucket_ptr, bool do_interpolation, Params... params)
+  {
+    bucket_ptr ++;
+    size_t & bucket = *bucket_ptr;
+    for (bucket = 0; bucket <= d_nbuckets; bucket ++) {
+      update_expr_map(interpolation, bucket_ptr, do_interpolation && bucket > 0, bucket_to_value(bucket), params...);
+    }
   }
 
-  // LATER maybe? this is just sampling midpoints, but it could maybe do sub-bucket ranges by outputing weights for each sequence
-  void update_expr_map(size_t *bucket_head, size_t *bucket_ptr, Doubles... params)
+  // WIP maybe? this is just sampling midpoints, but it could maybe do sub-bucket ranges by outputing weights for each sequence
+  void update_expr_map(map_linear_interpolation & interpolation, size_t *bucket_ptr, bool do_interpolation, Doubles... params)
   {
-    size_t & result = bucket_head[result_idx()];
-    result = d_expr(params...) * d_value_to_bucket_coeff + d_value_to_bucket_offset;
+    double value = d_expr(params...);
+    interpolation.this_ndplane_values[interpolation.input_buckets + 1] = value;
+    interpolation.this_ndplane_buckets[interpolation.input_buckets + 1] = value_to_bucket(value);
+
+    if (! do_interpolation) {
+      return;
+    }
+
+    size_t prev_buckets[sizeof...(Doubles)];
+    for (size_t w = 0; w < sizeof...(Doubles); w ++) {
+      // this could have been tracked next to bucket_ptr to not loop over the coords every call here
+      prev_buckets[w] = interpolation.input_buckets[w] - 1;
+    }
+
+    // todo: update with the densities implied by change since the preceding ndplane
+
+    // prev_buckets and buckets describe a volume of output values, with the first axis held by last_ndplane vs this_ndplane.
+    // - the goal is to stretch them over the result buckets with appropriate linearly interpolated densities, like the second
+    //   chunk of commented code misapplied farther up this file.  the fraction of the volume that covers a bucket, is its weight.
+    //   this will likely simply mean iterating over every output bucket within the ranges, just like this outer recursive iteration.
+
+    size_t result = interpolation.last_ndplane_buckets[prev_buckets + 1];
 
     if (result >= 0 && result < d_nbuckets) {
       if (is_reverse_solving()) {
-        d_unknown_result_map[bucket_head[d_output_idx]][result].add_sequence(bucket_head, d_output_idx);
+        d_unknown_result_map[prev_buckets[d_param_output_idx]][result].add_sequence(prev_buckets, d_param_output_idx);
       } else {
-        d_unknown_result_map[0][result].add_sequence(bucket_head, d_output_idx);
+        d_unknown_result_map[0][result].add_sequence(prev_buckets);
       }
     }
   }
-  // recursive template function walks each variable, trying all combinations to see what result they produce
-  template <typename... Params>
-  void update_expr_map(size_t *bucket_head, size_t *bucket_ptr, Params... params)
+
+  inline double bucket_to_value(size_t bucket)
   {
-    bucket_ptr ++;
-    if (bucket_ptr - bucket_head == result_idx()) {
-      bucket_ptr ++;
-    }
-    size_t & bucket = *bucket_ptr;
-    for (bucket = 0; bucket < d_nbuckets; bucket ++) {
-      double value = bucket * d_bucket_to_value_coeff + d_bucket_to_value_offset;
-      update_expr_map(bucket_head, bucket_ptr, value, params...);
-    }
+    return bucket * d_bucket_to_value_coeff + d_bucket_to_value_offset;
+  }
+
+  inline size_t value_to_bucket(double value)
+  {
+    return value * d_value_to_bucket_coeff + d_value_to_bucket_offset;
   }
   
   // index types.  variable index is what is passed to the constructor for the output.
