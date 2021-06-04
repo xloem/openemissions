@@ -10,7 +10,11 @@ templates:
             ${max},
             lambda x1=0,x2=0,x3=0: eval(${expr}, locals(), globals()),
             ${unknown.idx},
-            ${nbuckets}
+            ${nbuckets},
+            [
+                lambda x1=0,x2=0,x3=0: eval('[' + ${extrema} + ']', locals(), globals())[idx]
+                for idx in range(len(eval('[' + ${extrema} + ']', {'x1':0,'x2':0,'x3':0}, globals())))
+            ] if len(${extrema}) else ()
         )
 
 parameters:
@@ -67,31 +71,11 @@ outputs:
     vlen: ${ nbuckets }
 
 documentation: |-
-    Solves a histogram equation for an unknown, producing
-    histograms of possible values for the unknown.
+    Solves a histogram equation for an unknown, producing histograms of possible values for the unknown.
 
-    The inputs are assumed to be vectors produced by
-    histogram blocks.  The inputs will be mapped to
-    variables in the order "y0, x1, x2, x3", skipping
-    the variable specified as an unknown.
+    The inputs are assumed to be vectors produced by histogram blocks.  The inputs will be mapped to variables in the order "y0, x1, x2, x3", skipping the variable specified as an unknown.
 
-    TODO:
-    To identify all possible solutions, equation extrema
-    must be specified: solutions for the equation that
-    make its derivative equal to 0.  This parameter
-    is labeled "(y'=0)(x1,x2?,x3?) =".  As many of these
-    extrema may be given as desired, separated with commas.
-    They are given as tuples or arrays of the possible
-    value sets that make the derivative equal to zero.
-    For example, for "y0 = x1^2 - 2x1 + x2^2", the correct
-    extrema would be "(1, x2), (x1, 0)".  The first set,
-    "(1, x2)" is the set of values that make dy/dx1 = 0,
-    since dy0/dx1 = 2x1 - 2, so x1 = 1 for all x2.  The
-    second set, "(x1, 0)" is the values that make dy/dx2 = 0,
-    since dy/dx2 = 2x2, so x2 = 0 for all x1.  If extrema are
-    left out or incorrect then a higher bucket count may be
-    needed to include areas near them.
-
+    To identify all possible solutions, equation extrema must be specified: solutions for the equation that make its derivative equal to 0.  This parameter is labeled "(y'=0)(x1,x2?,x3?) =".  As many of these extrema may be given as desired, separated with commas, each one a tuple or array of the possible value sets that make the derivative equal to zero.  For example, for "y0 = x1^2 - 2x1 + x2^2", the correct extrema would be "(1, x2), (x1, 0), (1, 0)".  The first set, "(1, x2)" is the set of values that make dy/dx1 = 0, since dy0/dx1 = 2x1 - 2, so the most extreme value for x1 is 1 for any given x2.  The second set, "(x1, 0)" is the values that make dy/dx2 = 0, since dy/dx2 = 2x2, so the most extreme value for x2 is 0 for any given x1.  The third set, "(1, 0)" makes both dy/dx1 = 0 and dy/dx2 = 0, and it is the most important value to be present as it is the global minimum.  An entire region of the function can be missed if a constant extreme occurs partway through a histogram bin and is not specified.  If extrema are left out or incorrect, then larger histograms may be needed to properly include areas near them.
 
 asserts:
 -   ${ nvars >= 0 and nvars <= 3 }

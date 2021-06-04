@@ -184,7 +184,7 @@ class qa_histogram_solve(gr_unittest.TestCase):
             vlen = 8
         )
 
-        reverse_mul_f32 = histogram_solve_f32_2(-3.5, 4.5, lambda x, y: x * y, output_idx = 1, nbuckets = 8)
+        reverse_mul_f32 = histogram_solve_f32_2(-3.5, 4.5, lambda x, y: x * y, output_idx = 1, nbuckets = 8, extrema = [lambda x, y: (x, 0), lambda x,y: (0, y), lambda x,y: (0,0)])
         sink_unknown_f32 = blocks.vector_sink_f(8)
 
         self.tb.connect(src_result_f32, reverse_mul_f32, sink_unknown_f32)
@@ -213,7 +213,7 @@ class qa_histogram_solve(gr_unittest.TestCase):
             ],
             vlen = 8
         )
-        mul_f32 = histogram_solve_f32_2(-3.5, 4.5, lambda x, y: x * y, nbuckets=8)
+        mul_f32 = histogram_solve_f32_2(-3.5, 4.5, lambda x, y: x * y, nbuckets=8, extrema = [lambda x,y: (x,0), lambda x,y: (0,y), lambda x,y: (0,0)])
         sink_f32 = blocks.vector_sink_f(8)
 
         self.tb.connect(src1_f32, mul_f32, sink_f32)

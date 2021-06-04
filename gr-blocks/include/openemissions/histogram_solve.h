@@ -32,8 +32,9 @@ public:
    * \param[in] expr Callback that evaluates an expression to solve.
    * \param[in] output_idx Parameter index to solve for.  Index 0 is the expression result.
    * \param[in] nbuckets Vector length of the histograms; number of buckets
+   * \param[in] extrema Callbacks that evaluate to minima and maxima parameters in buckets
    */
-  static sptr make(double min, double max, std::function<double(Doubles...)> expr, size_t output_idx = 0, size_t nbuckets = 1024);
+  static sptr make(double min, double max, const std::function<double(Doubles...)> & expr, size_t output_idx = 0, size_t nbuckets = 1024, const std::vector<std::function<std::array<double, sizeof...(Doubles)>(Doubles...)>> & extrema = {});
 
   virtual void set_min(double min) = 0;
   virtual double min() const = 0;
@@ -41,6 +42,8 @@ public:
   virtual double max() const = 0;
   virtual void set_expr(const std::function<double(Doubles...)> &expr) = 0;
   virtual const std::function<double(Doubles...)> & expr() const = 0;
+  virtual void set_extrema(const std::vector<std::function<std::array<double, sizeof...(Doubles)>(Doubles...)>> &extrema) = 0;
+  virtual const std::vector<std::function<std::array<double, sizeof...(Doubles)>(Doubles...)>> & extrema() const = 0;
   virtual size_t output_idx() const = 0;
   virtual size_t nbuckets() const = 0;
 };

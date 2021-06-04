@@ -9,7 +9,11 @@
 
 #include <openemissions/histogram_solve.h>
 
-//#include <lapacke/lapacke.h>
+// with c++17 this can be removed in favor of std::apply
+#include <boost/fusion/functional/invocation/invoke.hpp>
+// #include <boost/fusion/adapted/std_array.hpp> // boost ~1.63
+#include <boost/fusion/container/vector.hpp>
+#include <boost/fusion/algorithm/iteration/fold.hpp>
 
 namespace gr {
 namespace openemissions {
@@ -18,6 +22,7 @@ namespace detail {
 
 // a square volume with a compile-time number of dimensions
 // i think these were standardised or are on a standards track, somewhere, not sure ...
+// probably in boost somewhere at least
 template <typename T, size_t N>
 class square_ctd : public std::vector<T>
 {
@@ -53,12 +58,6 @@ public:
     return std::vector<T>::operator[](coords2coord(coords));
   }
 
-  // i was getting confused mapping indices, so this is just done here for now
-  T & operator()(const size_t * coords, size_t skip_idx = ~0)
-  {
-    return std::vector<T>::operator[](coords2coord(coords, skip_idx));
-  }
-
 private:
   size_t d_edgelength;
 
@@ -83,6 +82,7 @@ private:
   double d_min;
   double d_max;
   std::function<double(Doubles...)> d_expr;
+  std::vector<std::function<std::array<double, sizeof...(Doubles)>(Doubles...)>> d_extrema;
   size_t d_output_idx;
   size_t d_param_output_idx;
   size_t d_nbuckets;
@@ -164,7 +164,7 @@ public:
   /*
    * The private constructor
    */
-  histogram_solve_impl(double min, double max, std::function<double(Doubles...)> expr, size_t output_idx, size_t nbuckets)
+  histogram_solve_impl(double min, double max, const std::function<double(Doubles...)> & expr, size_t output_idx, size_t nbuckets, const std::vector<std::function<std::array<double, sizeof...(Doubles)>(Doubles...)>> & extrema)
     : gr::sync_block("histogram_solve",
             gr::io_signature::make(sizeof...(Doubles), sizeof...(Doubles), sizeof(freq_type) * nbuckets),
             gr::io_signature::make(1, output_is_forward_solving(output_idx) ? 1 : 2, sizeof(freq_type) * nbuckets)),
@@ -304,233 +304,8 @@ public:
         }
         */
         for (size_t unknown_bucket = 0; unknown_bucket < d_nbuckets; unknown_bucket ++) {
-            out[unknown_bucket] = d_unk_vec[unknown_bucket]; // / total_outcomes;
+            out[unknown_bucket] = d_unk_vec[unknown_bucket];
         }
-#if 0
-        /*
-          If a conditional probability occurs in a finite set of mutually exclusive conditions,
-          then the unconditional probability is: 
-
-          P(A) = P(A | C_1) * P(C_1) + ... + P(A | C_n) * P(C_n)
-
-          This can be applied to our conditions here.  We calculate the probability of each
-          result assuming each possible unknown value.  The unknown values form mutually exclusive
-          conditions:
-
-          P(R_x) = P(R_x | Unk_1) * P(Unk_1) + ... + P(R_x | Unk_n) * P(Unk_n)
-
-          This same relation can be stated as a simple matrix equation:
-
-              .--- the error is in how this vector is built.
-              v    We sampled from P(R_x | Unk_real), not P(R_x) which here would be independent of Unk_real.
-          [ P(R_1) ]   [ P(R_1 | Unk_1) ... P(R_1 | Unk_n) ]   [ P(Unk_1) ]
-          [   ...  ] = [       ...      ...        ...     ] x [    ...   ]
-          [ P(R_n) ]   [ P(R_n | Unk_1) ... P(R_n | Unk_n) ]   [ P(Unk_n) ]
-          
-          The matrix of conditionals in the middle, calculated from d_result_map,
-          can be inverted and multiplied by the result vector on the left, which is
-          the result input histogram, to calculate the probabilities of all possible
-          unknown values on the right.
-        */
-        
-        d_mat.resize(d_nbuckets * d_nbuckets);
-        d_vec.resize(d_nbuckets);
-        d_mat_p.resize(d_nbuckets);
-        double * conditional = d_mat.data();
-        double total = 0;
-        // my openblas library crashes when used with row major data, so this is definitely col major
-        for (size_t unknown_bucket = 0; unknown_bucket < d_nbuckets; unknown_bucket ++) {
-          d_vec[unknown_bucket] = in[result_input_idx()][item * d_nbuckets + unknown_bucket];
-          for (size_t result_bucket = 0; result_bucket < d_nbuckets; result_bucket ++) {
-            *conditional = d_unknown_result_map[unknown_bucket][result_bucket].calc(in, item * d_nbuckets, result_idx());
-            total += *conditional;
-            conditional ++;
-          }
-        }
-        for (size_t result_bucket = 0; result_bucket < d_nbuckets; result_bucket ++) {
-          std::cerr << "[\t" << d_vec[result_bucket] << "\t]\t";
-          if (result_bucket == d_nbuckets / 2) {
-            std::cerr << "=";
-          }
-          for (size_t unknown_bucket = 0; unknown_bucket < d_nbuckets; unknown_bucket ++) {
-            std::cerr << "\t" << d_mat[result_bucket + unknown_bucket * d_nbuckets] << "=" <<
-                d_unknown_result_map[unknown_bucket][result_bucket].calc(in, item * d_nbuckets, result_idx());
-          }
-          if (result_bucket == d_nbuckets / 2) {
-            std::cerr << "\t*\tX";
-          }
-          std::cerr << std::endl;
-        }
-
-        // solve
-        //int status = LAPACKE_dgels(LAPACK_COL_MAJOR, 'N', d_nbuckets, d_nbuckets, 1, d_mat.data(), d_nbuckets, d_vec.data(), d_nbuckets);
-        int status = LAPACKE_dgesv(LAPACK_COL_MAJOR, d_nbuckets, 1, d_mat.data(), d_nbuckets, d_mat_p.data(), d_vec.data(), d_nbuckets);
-        if (status < 0) {
-          throw std::runtime_error("argument " + std::to_string(-status) + " to lapack has illegal value");
-        } else if (status > 0) {
-          throw std::runtime_error("matrix factor is exactly singular, U(" + std::to_string(status) + ") == 0");
-          //throw std::runtime_error("could not compute least squares solution, A triangular factor diagonal " + std::to_string(status) + " == 0");
-        }
-
-        for (size_t bucket = 0; bucket < d_nbuckets; bucket ++) {
-          out[bucket] = d_vec[bucket] * total;
-        }
-        
-#endif
-        
-#if 0
-        double measured_result_total = 0;
-        for (size_t result_bucket = 0; result_bucket < d_nbuckets; result_bucket ++) {
-          measured_result_total += in[result_input_idx()][result_bucket];
-        }
-
-        // we form distributions for each potential value of the unknown variable
-        for (size_t unknown_bucket = 0; unknown_bucket < d_nbuckets; unknown_bucket ++) {
-          double unknown_proportion;
-
-          // given the potential value, we form the histogram of the result variable
-          // this histogram is placed into calculated_result_histogram
-
-          double calculated_result_total = 0;
-
-          for (size_t result_bucket = 0; result_bucket < d_nbuckets; result_bucket ++) {
-            double frequency = d_unknown_result_map[unknown_bucket][result_bucket].calc(in, item * d_nbuckets);
-            calculated_result_total += frequency;
-            calculated_result_histogram[result_bucket] = frequency;
-          }
-
-          /*
-          
-          std::map<double, double> frequency_density; // for calculating P(bucket value)
-          double last_frequency;
-          for (size_t result_bucket = 0; result_bucket < d_nbuckets; result_bucket ++) {
-            double frequency = d_unknown_result_map[unknown_bucket][result_bucket].calc(in, item * d_nbuckets);
-            calculated_result_total += frequency;
-            calculated_result_histogram[result_bucket] = frequency;
-            if (result_bucket > 0) {
-              double range_min = last_frequency;
-              double range_max = frequency;
-              if (frequency < last_frequency) {
-                std::swap(range_min, range_max);
-              }
-              double range_density = 1 / (range_max - range_min);
-              // first we store the changes, then later integrate them to look up the overlaps
-              frequency_density[range_min] += range_density;
-              frequency_density[range_max] -= range_density;
-            }
-            last_frequency = frequency;
-          }
-          double range_cumulation = 0;
-          for (std::pair<double, double> const & frequency_diff : frequency_density) {
-            // integrate
-            range_cumulation += frequency_diff.second;
-            frequency_diff.second = range_cumulation;
-          }
-          std::vector<double> result_probabilities(d_nbuckets, 0);
-          {
-            size_t result_bucket = 1;
-            double frequency = calculated_result_histogram[result_bucket];
-            if (result_bucket > 0) {
-              double range_min = last_frequency;
-              double range_max = frequency;
-              if (frequency < last_frequency) {
-                std::swap(range_min, range_max);
-              }
-              auto range_begin_end = frequency_density.upper_bound(range_min);
-              auto range_begin_begin = range_begin_end;
-              range_begin_begin --;
-              auto range_end_end = frequency_density.upper_bound(range_max);
-              auto range_end_begin = range_end_end;
-              range_end_begin --;
-
-              double begin_integral = (range_begin_end->second - range_begin_begin->second) * (range_min - range_begin_begin->first) / (range_begin_end->first - range_begin_begin->first) + range_begin_begin->second;
-              double end_integral = (range_end_end->second - range_end_begin->second) * (range_min - range_end_begin->first) / (range_end_end->first - range_end_begin->first) + range_end_begin->second;
-
-              double range_probability = (end_integral - begin_integral) / range_cumulation;
-              double half_result_probability = range_probability / 2; // one for left bucket, one for right bucket
-              result_probabilities[result_bucket - 1] += half_result_probability;
-              result_probabilities[result_bucket] += half_result_probability;
-            }
-            last_frequency = frequency;
-          }
-          */
-
-          unknown_proportion = measured_result_total;
-
-          // in the qa_test, for output bucket 0 == output value -3,
-          // the result total is zero because there is no density in the overlapping region
-          // adding -3 to the addend makes it completely nonintersecting with the sum.
-          // it only intersects when the scalar addend is >= 0
-
-          // this might relate to meaning of calculated_result_total that is left out of the algorithm.
-          // areas that overlap are much more valuable than those that don't.
-
-          for (size_t result_bucket = 0; unknown_proportion != 0 && result_bucket < d_nbuckets; result_bucket ++) {
-    
-            double calculated_result_frequency = calculated_result_histogram[result_bucket];
-            freq_type const & measured_result_frequency = in[result_input_idx()][result_bucket];
-    
-            double population_frequency = calculated_result_frequency;
-            double population_count = calculated_result_total;
-            double sample_frequency = measured_result_frequency;
-            double sample_count = measured_result_total;
-            
-            if (population_frequency <= 0) {
-                if (sample_frequency > 0) {
-                    // no population here, but samples found.
-                    // result is technically zero assuming accurate population.
-                    // maybe population/sample could be inverted?
-                }
-                continue;
-            } else if (population_frequency >= population_count) {
-                // all population here, but not all samples here.
-                // result is technically zero assuming accurate population
-                // maybe population/sample could be inverted?
-                unknown_proportion = sample_frequency;
-                break;
-            }
-    
-            double population_proportion = population_count > 0 ? population_frequency / population_count : 0;
-            double sample_proportion = sample_count > 0 ? sample_frequency / sample_count : 0;
-
-                // output value goes up as sample total goes down.
-                //
-                // sample total is proportional to sample mean, variance, and deviation^2
-                // this scales the sample z scale by 1 / sqrt(sample total)
-                // and the likelihood by sqrt(sample total)
-                // and the final proportion by sqrt(sample total) ^ buckets
-                // -> ther sample total that is contributing multiple times.
-                //    the sample total is condensing the z scores, and that factor has an exponential
-                //    relationship with the result, due to repeated multiplication
-                //    the event count of the result drops many orders of magnitude below 1.0
-    
-            // binomial distribution, might be correct
-            double theorised_sample_mean = sample_count * population_proportion;
-            double theorised_sample_variance = theorised_sample_mean * (1 - population_proportion);
-            double theorised_sample_deviation = sqrt(theorised_sample_variance);
-            double sample_z = (sample_frequency - theorised_sample_mean) / theorised_sample_deviation;
-    
-            // likelihood of sampling a bucket like this, or a less-similar one.  hits 100% at precise similarity.
-            // this is a bucket analogous to the result bucket
-            // it might end up being helpful to show these histograms here, and to test them in qa.  they could be cached in a member variable.
-            double sample_probability_given_unknown = erfc(-abs(sample_z) * M_SQRT1_2);
-
-            // the formula is P(Unknown given Histogram) = P(Histogram given Unknown) * P(Unknown) / P(Histogram)
-            //double unknown_probability_given_sample = sample_probability_given_unknown / d_result_independent_probability[result_bucket] / d_nbuckets;
-    
-            // old: the unknown likelihood is the likelihood of all the sample likelihoods happening, given the population
-            unknown_proportion *= sample_probability_given_unknown; //unknown_probability_given_sample;
-            // old: sample_count -= sample_frequency;
-          }
-
-          if (std::is_integral<freq_type>::value) {
-            out[unknown_bucket] = round(unknown_proportion);
-          } else {
-            out[unknown_bucket] = unknown_proportion;
-          }
-
-        }
-#endif
       }
 
       out += d_nbuckets;
@@ -571,6 +346,16 @@ public:
     return d_expr;
   }
 
+  void set_extrema(const std::vector<std::function<std::array<double, sizeof...(Doubles)>(Doubles...)>> &extrema) override
+  {
+    d_extrema = extrema;
+  }
+
+  const std::vector<std::function<std::array<double, sizeof...(Doubles)>(Doubles...)>> & extrema() const override
+  {
+    return d_extrema;
+  }
+
   size_t output_idx() const override
   {
     return d_output_idx;
@@ -585,9 +370,12 @@ private:
   struct map_approximation_work
   {
     struct point_work {
+      // variable names could be clearer.  these two are result values.
       double value;
       size_t bucket;
-      double value_deltas[sizeof...(Doubles)];
+      // whereas these are input parameter values.  stored so many times to ease design, likely could be reduced.
+      std::array<double, sizeof...(Doubles)> parameters;
+      std::vector<std::array<double, sizeof...(Doubles)>> extrema_values;
     };
     detail::square_ctd<point_work, sizeof...(Doubles) - 1> last_ndplane;
     detail::square_ctd<point_work, sizeof...(Doubles) - 1> this_ndplane;
@@ -619,6 +407,7 @@ private:
 
   // recursive template function walks each variable, trying all combinations to see what result they produce
   // this function has so many arguments that i'd like it if this algorithm were eventually bundled into a class with member variables
+  // this recursion to enumerate a parameter pack can probably also be replaced with something from boost or the c++ std
   template <typename... Params>
   void update_expr_map(map_approximation_work & interpolation, size_t *bucket_ptr, bool do_interpolation, Params... params)
   {
@@ -634,6 +423,12 @@ private:
     double value = d_expr(params...);
     interpolation.this_ndplane[interpolation.input_buckets + 1].value = value;
     interpolation.this_ndplane[interpolation.input_buckets + 1].bucket = value_to_bucket(value);
+    interpolation.this_ndplane[interpolation.input_buckets + 1].parameters = { params... };
+    interpolation.this_ndplane[interpolation.input_buckets + 1].extrema_values.resize(d_extrema.size());
+    for (size_t w = 0; w < d_extrema.size(); w++) {
+        auto extrema_values = d_extrema[w](params...);
+        interpolation.this_ndplane[interpolation.input_buckets + 1].extrema_values[w] = extrema_values;
+    }
 
     if (! do_interpolation) {
       return;
@@ -651,12 +446,15 @@ private:
     }
 
     // the simplest solution involves finding the minimum and maximum result for the bucket.
+    // this is a little inaccurate but ensures all possibilities are included.
     size_t difference_indices[sizeof...(Doubles)];
     for (size_t w = 0; w < sizeof...(Doubles); w ++) {
       difference_indices[w] = interpolation.input_buckets[w] - 1;
     }
+    std::array<double, sizeof...(Doubles)> & minimum_params = interpolation.last_ndplane[difference_indices + 1].parameters;
+    std::array<double, sizeof...(Doubles)> & maximum_params = interpolation.this_ndplane[interpolation.input_buckets + 1].parameters;
     double minimum, maximum;
-    minimum = maximum = interpolation.this_ndplane[difference_indices + 1].value;
+    minimum = maximum = interpolation.last_ndplane[difference_indices + 1].value;
     while (true) {
       // walk all corner coordinates via base 2 incrementation
       size_t idx = 0;
@@ -674,12 +472,36 @@ private:
 
       // store min/max
       auto & ndplane = difference_indices[0] ? interpolation.last_ndplane : interpolation.this_ndplane;
-      double & value = ndplane[difference_indices + 1].value;
+      auto & point_work = ndplane[difference_indices + 1];
+      double & value = point_work.value;
       if (value < minimum) {
         minimum = value;
       }
       if (value > maximum) {
         maximum = value;
+      }
+      for (size_t w = 0; w < point_work.extrema_values.size(); w ++) {
+        bool within_range = true;
+        for (size_t x = 0; x < sizeof...(Doubles) && within_range; x++) {
+          double & extreme_parameter = point_work.extrema_values[w][x];
+          if (extreme_parameter < minimum_params[x] || extreme_parameter > maximum_params[x]) {
+            within_range = false;
+          }
+        }
+        if (within_range) {
+                     // i had boost 1.53 so converted to a fusion::vector.  use of invoke directly on std::array was probably added around boost 1.63 .
+          boost::fusion::vector<Doubles...> parameters;
+          boost::fusion::fold(parameters, 0, [&](int idx, double & val) { val = point_work.extrema_values[w][idx]; return idx + 1; });
+                                 // can be replaced in c++17 with std::apply
+          double extreme_result = boost::fusion::invoke(d_expr, parameters);
+
+          if (extreme_result < minimum) {
+            minimum = extreme_result;
+          }
+          if (extreme_result > maximum) {
+            maximum = extreme_result;
+          }
+        }
       }
     }
 
@@ -688,8 +510,6 @@ private:
     auto & result_maps = is_reverse_solving() ? d_unknown_result_map[prev_buckets[d_param_output_idx]] : d_unknown_result_map[0];
 
     // for now values are given a very simple linear interpolation between min and max
-    // the next step would be to let the user specify extrema in the UI, so they can make sure those are included if missed due to sampling.  otherwise results near them are unsolvable.
-    // extrema are simply points or functions to possibly extend the minimum/maximum, here
 
     size_t first_bucket = value_to_bucket(minimum);
     size_t last_bucket = value_to_bucket(maximum);
@@ -727,15 +547,17 @@ private:
   }
   
   // index types.  variable index is what is passed to the constructor for the output.
-  // all variables are in order.  the output is at d_output_idx.  the result is at result_idx().
+  // with variable indices, all variables are in order.  the output is at d_output_idx.  the result is at result_idx().
 
-  // input indices index the block inputs and have no output in them.  they are one fewer, and the output is skipped.
+  // input indices index the block inputs and have no output in them.
+  // with input indices, the total is one fewer, and the output is skipped.
   size_t var_idx_to_input_idx(size_t var_idx) const
   {
     return var_idx < d_output_idx ? var_idx : var_idx - 1;
   }
 
-  // parameter indices index the expression parameters.  they are one fewer, and the result is skipped.
+  // parameter indices index the expression parameters.
+  // with parameter indices, the total is one fewer, and the result is skipped.
   // when the result is the output (forward-solving), the parameter index happens to be the same as the input index.
   size_t var_idx_to_param_idx(size_t var_idx) const
   {
@@ -752,8 +574,8 @@ private:
     }
   }
 
-  // having the result index be provided by this member function
-  // provides some space towards letting the user set their own variable/input order in the UI
+  // providing the result index with this member function
+  // gives some space towards letting the user set their own variable/input order in the UI some day
   static constexpr size_t result_idx()
   {
     return 0;
@@ -787,10 +609,10 @@ private:
 
 template <typename freq_type, typename... Doubles>
 typename histogram_solve<freq_type, Doubles...>::sptr
-histogram_solve<freq_type, Doubles...>::make(double min, double max, std::function<double(Doubles...)> expr, size_t output_idx, size_t nbuckets)
+histogram_solve<freq_type, Doubles...>::make(double min, double max, const std::function<double(Doubles...)> & expr, size_t output_idx, size_t nbuckets, const std::vector<std::function<std::array<double, sizeof...(Doubles)>(Doubles...)>> & extrema)
 {
   return gnuradio::make_block_sptr<histogram_solve_impl<freq_type, Doubles...>>(
-    min, max, expr, output_idx, nbuckets);
+    min, max, expr, output_idx, nbuckets, extrema);
 }
 
 template class histogram_solve<double,   double>;

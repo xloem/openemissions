@@ -44,6 +44,7 @@ void bind_histogram_solve_template(py::module& m, const char *classname)
            py::arg("expr"),
            py::arg("output_idx") = 0,
            py::arg("nbuckets") = 1024,
+           py::arg("extrema") = std::vector<std::function<std::array<double, sizeof...(Doubles)>(Doubles...)>>(),
            D(histogram_solve,make)
         ) ;
 }
