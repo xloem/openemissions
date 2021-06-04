@@ -113,9 +113,9 @@ private:
           for (size_t w = 0; w < sizeof...(Doubles)/* + 1*/; w ++) {
             if (w != skip_idx/* && w != result_idx()*/) {
               index_sequences.push_back(sequence[w]);
-              proportions.push_back(proportion);
             }
           }
+          proportions.push_back(proportion);
       }
   
       template <typename T>
@@ -133,9 +133,14 @@ private:
                     if (varnum != result_idx()) {
                         // the number of outcomes made by each combination of inputs
                         // is the combined product of the number of outcomes they hold
-                        product *= knowns[knownidx][offset + index_sequences[sequence]];
                         found_zero_density = false;
+                        T outcomes = knowns[knownidx][offset + index_sequences[sequence]];
                         sequence ++;
+                        if (outcomes == 0) {
+                          product = 0;
+                        } else {
+                          product *= outcomes;
+                        }
                     }
                     knownidx ++;
                 }
@@ -167,7 +172,7 @@ public:
       d_max(max),
       d_expr(expr),
       d_output_idx(output_idx),
-      d_param_output_idx(var_idx_to_param_idx(output_idx)),
+      d_param_output_idx(output_idx == result_idx() ? ~0 : var_idx_to_param_idx(output_idx)),
       d_nbuckets(nbuckets)
   {
     update_coeffs();
@@ -250,7 +255,7 @@ public:
             }
             double & unknown_result_outcomes = d_unk_vec[unknown_bucket];
             unknown_result_outcomes = max_population;
-            for (size_t result_bucket = 0; result_bucket < d_nbuckets; result_bucket ++) {
+            for (size_t result_bucket = 0; result_bucket < d_nbuckets && unknown_result_outcomes != 0; result_bucket ++) {
                 // We interpret the calculated histogram as a population,
                 // and count how many samplings give the measured bucket.
                 //
@@ -274,7 +279,8 @@ public:
 
                 double sampbinheight = in[result_idx()][item * d_nbuckets + result_bucket] / max_sample;
                 //if (d_pop_mask[result_bucket]) {
-                    unknown_result_outcomes *= pow(d_pop_vec[result_bucket] / max_population, sampbinheight);
+                    double factor = pow(d_pop_vec[result_bucket] / max_population, sampbinheight);
+                    unknown_result_outcomes *= factor;
                 //} else {
                 //    // this condition happens if some of the result data is unmodelled
                 //    // this could happen if the bounds are too small, or if sampled data
@@ -576,12 +582,15 @@ public:
   }
 
 private:
-  struct map_linear_interpolation
+  struct map_approximation_work
   {
-    detail::square_ctd<double, sizeof...(Doubles) - 1> last_ndplane_values;
-    detail::square_ctd<double, sizeof...(Doubles) - 1> this_ndplane_values;
-    detail::square_ctd<size_t, sizeof...(Doubles) - 1> last_ndplane_buckets;
-    detail::square_ctd<size_t, sizeof...(Doubles) - 1> this_ndplane_buckets;
+    struct point_work {
+      double value;
+      size_t bucket;
+      double value_deltas[sizeof...(Doubles)];
+    };
+    detail::square_ctd<point_work, sizeof...(Doubles) - 1> last_ndplane;
+    detail::square_ctd<point_work, sizeof...(Doubles) - 1> this_ndplane;
     size_t input_buckets[sizeof...(Doubles)];
   };
 
@@ -589,34 +598,29 @@ private:
   {
     double range = (double)d_max - d_min;
 
-    // bucket values are slid by half a bucket to represent the middle of the bucket
-    // rather than the start
     d_bucket_to_value_coeff = range / d_nbuckets;
-    d_bucket_to_value_offset = d_min + /*slide up*/d_bucket_to_value_coeff / 2;
+    d_bucket_to_value_offset = d_min;
     d_value_to_bucket_coeff = d_nbuckets / range;
-    d_value_to_bucket_offset = -d_value_to_bucket_coeff * d_min - /*slide down*/0.5;
+    d_value_to_bucket_offset = -d_value_to_bucket_coeff * d_min;
 
     d_unknown_result_map.clear();
     d_unknown_result_map.resize(d_nbuckets, std::vector<sparse_dot>{d_nbuckets});
 
-    map_linear_interpolation interpolation;
+    map_approximation_work interpolation;
     size_t * bucket_ptr = interpolation.input_buckets;
     size_t & outermost_bucket = *bucket_ptr;
-    interpolation.last_ndplane_values.resize(d_nbuckets);
-    interpolation.last_ndplane_buckets.resize(d_nbuckets);
-    interpolation.this_ndplane_values.resize(d_nbuckets);
-    interpolation.this_ndplane_buckets.resize(d_nbuckets);
+    interpolation.this_ndplane.resize(d_nbuckets + 1);
+    interpolation.last_ndplane.resize(d_nbuckets + 1);
     for (outermost_bucket = 0; outermost_bucket <= d_nbuckets; outermost_bucket ++) {
       update_expr_map(interpolation, bucket_ptr, outermost_bucket > 0, bucket_to_value(outermost_bucket));
-      interpolation.this_ndplane_buckets.swap(interpolation.last_ndplane_buckets);
-      interpolation.this_ndplane_values.swap(interpolation.last_ndplane_values);
+      interpolation.this_ndplane.swap(interpolation.last_ndplane);
     }
   }
 
   // recursive template function walks each variable, trying all combinations to see what result they produce
   // this function has so many arguments that i'd like it if this algorithm were eventually bundled into a class with member variables
   template <typename... Params>
-  void update_expr_map(map_linear_interpolation & interpolation, size_t *bucket_ptr, bool do_interpolation, Params... params)
+  void update_expr_map(map_approximation_work & interpolation, size_t *bucket_ptr, bool do_interpolation, Params... params)
   {
     bucket_ptr ++;
     size_t & bucket = *bucket_ptr;
@@ -625,37 +629,89 @@ private:
     }
   }
 
-  // WIP maybe? this is just sampling midpoints, but it could maybe do sub-bucket ranges by outputing weights for each sequence
-  void update_expr_map(map_linear_interpolation & interpolation, size_t *bucket_ptr, bool do_interpolation, Doubles... params)
+  void update_expr_map(map_approximation_work & interpolation, size_t *bucket_ptr, bool do_interpolation, Doubles... params)
   {
     double value = d_expr(params...);
-    interpolation.this_ndplane_values[interpolation.input_buckets + 1] = value;
-    interpolation.this_ndplane_buckets[interpolation.input_buckets + 1] = value_to_bucket(value);
+    interpolation.this_ndplane[interpolation.input_buckets + 1].value = value;
+    interpolation.this_ndplane[interpolation.input_buckets + 1].bucket = value_to_bucket(value);
 
     if (! do_interpolation) {
       return;
     }
 
+    // prev_buckets and input_buckets describe a volume of output values, with the first axis held by last_ndplane vs this_ndplane.
+    // the goal is to stretch them over the result buckets with appropriate linearly interpolated densities.
+    // the fraction of the volume that covers a bucket, is its weight.
+    // todo: unify prev_buckets and difference_indices to organise a little
+
     size_t prev_buckets[sizeof...(Doubles)];
     for (size_t w = 0; w < sizeof...(Doubles); w ++) {
-      // this could have been tracked next to bucket_ptr to not loop over the coords every call here
+      // this could have been tracked next to bucket_ptr to not loop over the coords every call here?
       prev_buckets[w] = interpolation.input_buckets[w] - 1;
     }
 
-    // todo: update with the densities implied by change since the preceding ndplane
+    // the simplest solution involves finding the minimum and maximum result for the bucket.
+    size_t difference_indices[sizeof...(Doubles)];
+    for (size_t w = 0; w < sizeof...(Doubles); w ++) {
+      difference_indices[w] = interpolation.input_buckets[w] - 1;
+    }
+    double minimum, maximum;
+    minimum = maximum = interpolation.this_ndplane[difference_indices + 1].value;
+    while (true) {
+      // walk all corner coordinates via base 2 incrementation
+      size_t idx = 0;
+      while (idx < sizeof...(Doubles)) {
+        difference_indices[idx] ++;
+        if (difference_indices[idx] <= interpolation.input_buckets[idx]) {
+          break;
+        }
+        difference_indices[idx] = interpolation.input_buckets[idx] - 1;
+        idx ++;
+      }
+      if (idx == sizeof...(Doubles)) {
+        break;
+      }
 
-    // prev_buckets and buckets describe a volume of output values, with the first axis held by last_ndplane vs this_ndplane.
-    // - the goal is to stretch them over the result buckets with appropriate linearly interpolated densities, like the second
-    //   chunk of commented code misapplied farther up this file.  the fraction of the volume that covers a bucket, is its weight.
-    //   this will likely simply mean iterating over every output bucket within the ranges, just like this outer recursive iteration.
+      // store min/max
+      auto & ndplane = difference_indices[0] ? interpolation.last_ndplane : interpolation.this_ndplane;
+      double & value = ndplane[difference_indices + 1].value;
+      if (value < minimum) {
+        minimum = value;
+      }
+      if (value > maximum) {
+        maximum = value;
+      }
+    }
 
-    size_t result = interpolation.last_ndplane_buckets[prev_buckets + 1];
+    double result_range = maximum - minimum;
 
-    if (result >= 0 && result < d_nbuckets) {
-      if (is_reverse_solving()) {
-        d_unknown_result_map[prev_buckets[d_param_output_idx]][result].add_sequence(prev_buckets, d_param_output_idx);
+    auto & result_maps = is_reverse_solving() ? d_unknown_result_map[prev_buckets[d_param_output_idx]] : d_unknown_result_map[0];
+
+    // for now values are given a very simple linear interpolation between min and max
+    // the next step would be to let the user specify extrema in the UI, so they can make sure those are included if missed due to sampling.  otherwise results near them are unsolvable.
+    // extrema are simply points or functions to possibly extend the minimum/maximum, here
+
+    size_t first_bucket = value_to_bucket(minimum);
+    size_t last_bucket = value_to_bucket(maximum);
+    size_t head_bucket = first_bucket < 0 ? 0 : first_bucket;
+    size_t tail_bucket = last_bucket >= d_nbuckets ? d_nbuckets - 1 : last_bucket;
+
+    for (size_t cur_bucket = head_bucket; cur_bucket <= tail_bucket; cur_bucket ++) {
+      double density;
+      if (cur_bucket == last_bucket) {
+        if (cur_bucket == first_bucket) {
+          density = 1.0;
+        } else {
+          density = (maximum - bucket_to_value(last_bucket)) / result_range;
+        }
+      } else if (cur_bucket == first_bucket) {
+        density = (bucket_to_value(first_bucket + 1) - minimum) / result_range;
       } else {
-        d_unknown_result_map[0][result].add_sequence(prev_buckets);
+        density = d_bucket_to_value_coeff / result_range;
+      }
+      // prev_buckets could be the same variable as difference_indices
+      if (density > 0) {
+        result_maps[cur_bucket].add_sequence(prev_buckets, d_param_output_idx, density);
       }
     }
   }
